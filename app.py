@@ -2,36 +2,24 @@ import os
 import shutil
 import hashlib
 import numpy as np
+import cv2
 from PIL import Image, ImageSequence
-
 from nudenet import NudeDetector
-import deepdanbooru as dd
+import onnxruntime as ort
 
 # ==============================
 # SETTINGS
 # ==============================
 
-DANBOORU_THRESHOLD = 0.12
+ANIME_THRESHOLD = 0.50  # aggressive
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
-NSFW_DANBOORU_TAGS = {
-    "sex", "anal", "oral", "vaginal",
-    "cum", "ejaculation",
-    "penis", "pussy", "nipples",
-    "breasts", "ass", "anus",
-    "spread_legs", "masturbation",
-    "fingering", "handjob", "blowjob",
-    "bdsm", "hentai", "nude",
-    "no_bra", "no_panties",
-    "cameltoe"
-}
+MODEL_PATH = "anime_nsfw.onnx"
 
-print("Loading DeepDanbooru model...")
-danbooru_model = dd.DeepDanbooru()
-danbooru_model.load_model()
+print("Loading models...")
 
-print("Loading NudeNet...")
 nudenet_detector = NudeDetector()
+anime_session = ort.InferenceSession(MODEL_PATH)
 
 print("Models loaded.")
 
@@ -45,25 +33,23 @@ def hash_file(path):
         hasher.update(f.read())
     return hasher.hexdigest()
 
-def detect_with_danbooru(image):
+def preprocess_anime(img_path):
+    img = cv2.imread(img_path)
+    img = cv2.resize(img, (224, 224))
+    img = img.astype(np.float32) / 255.0
+    img = np.transpose(img, (2, 0, 1))
+    img = np.expand_dims(img, axis=0)
+    return img
+
+def detect_anime_nsfw(path):
     try:
-        results = danbooru_model.predict(image)
-
-        strongest = None
-        score_max = 0
-
-        for tag, prob in results.items():
-            if tag in NSFW_DANBOORU_TAGS and prob > DANBOORU_THRESHOLD:
-
-                if tag in {"sex", "anal", "oral", "penis", "pussy"}:
-                    return tag
-
-                if prob > score_max:
-                    strongest = tag
-                    score_max = prob
-
-        return strongest
-
+        input_tensor = preprocess_anime(path)
+        input_name = anime_session.get_inputs()[0].name
+        outputs = anime_session.run(None, {input_name: input_tensor})
+        score = outputs[0][0][1]  # NSFW probability
+        if score > ANIME_THRESHOLD:
+            return "ANIME_NSFW"
+        return None
     except:
         return None
 
@@ -80,8 +66,10 @@ def detect_gif(path):
     try:
         with Image.open(path) as img:
             for frame in ImageSequence.Iterator(img):
-                frame = frame.convert("RGB")
-                tag = detect_with_danbooru(frame)
+                temp_path = "temp_frame.jpg"
+                frame.convert("RGB").save(temp_path)
+                tag = detect_anime_nsfw(temp_path)
+                os.remove(temp_path)
                 if tag:
                     return tag
         return None
@@ -96,17 +84,10 @@ def detect_image(path):
             return tag
         return None
 
-    try:
-        img = Image.open(path).convert("RGB")
-    except:
-        return None
-
-    # Anime first
-    tag = detect_with_danbooru(img)
+    tag = detect_anime_nsfw(path)
     if tag:
         return tag
 
-    # Real content backup
     return detect_with_nudenet(path)
 
 def scan_folder(folder):
@@ -134,14 +115,12 @@ def scan_folder(folder):
 
             print("Scanning:", file)
 
-            # Duplicate detection
             file_hash = hash_file(full_path)
             if file_hash in seen_hashes:
                 shutil.move(full_path, os.path.join(dup_folder, file))
                 continue
             seen_hashes.add(file_hash)
 
-            # Detection
             result = detect_image(full_path)
 
             if result:
