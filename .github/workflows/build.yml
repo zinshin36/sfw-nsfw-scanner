@@ -18,12 +18,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
+          pip install pyinstaller
 
-      - name: Build EXE
-        run: pyinstaller app.py --onefile --noconsole --collect-all deepdanbooru --collect-submodules deepdanbooru --collect-all tensorflow --collect-all tensorflow_io --collect-all nudenet
+      - name: Build using spec file
+        run: pyinstaller app.spec
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
           name: nsfw-scanner
-          path: dist/app.exe
+          path: dist/app
