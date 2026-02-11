@@ -20,7 +20,15 @@ jobs:
           pip install --no-cache-dir -r requirements.txt
 
       - name: Build EXE
-        run: pyinstaller --onefile --noconsole --collect-all deepdanbooru --collect-all tensorflow --collect-all tensorflow_io --collect-all nudenet app.py
+        run: |
+          pyinstaller app.py ^
+            --onefile ^
+            --noconsole ^
+            --collect-all deepdanbooru ^
+            --collect-submodules deepdanbooru ^
+            --collect-all tensorflow ^
+            --collect-all tensorflow_io ^
+            --collect-all nudenet
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
