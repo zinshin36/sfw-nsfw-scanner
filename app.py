@@ -7,20 +7,23 @@ from tkinter import filedialog, scrolledtext
 from nudenet import NudeDetector
 from PIL import Image, ImageSequence
 
-# Initialize detector
-detector = NudeDetector()
-
-seen_hashes = set()
-
+# -------------------------
 # ULTRA AGGRESSIVE SETTINGS
-NSFW_THRESHOLD = 0.20  # very low = more sensitive
-
-# Include all classes (exposed + covered + hentai/sexual)
+# -------------------------
+NSFW_THRESHOLD = 0.20  # very low
 NSFW_CLASSES = {
     "EXPOSED_ANUS", "EXPOSED_BREAST", "EXPOSED_BUTTOCKS", "EXPOSED_GENITALIA", "EXPOSED_PUBIC_AREA",
     "COVERED_BREAST", "COVERED_GENITALIA", "COVERED_BUTTOCKS", "COVERED_PUBIC_AREA",
     "HENTAI", "SEXY", "PORN"
 }
+
+# -------------------------
+# Initialize detector
+# -------------------------
+# Force model download at runtime (works in EXE)
+detector = NudeDetector()  
+
+seen_hashes = set()
 
 def get_file_hash(filepath):
     hasher = hashlib.md5()
@@ -30,13 +33,19 @@ def get_file_hash(filepath):
     return hasher.hexdigest()
 
 def is_nsfw(detections):
+    if not detections:
+        return True  # treat empty as suspicious
     for d in detections:
         if d["class"] in NSFW_CLASSES and d["score"] > NSFW_THRESHOLD:
             return True
     return False
 
 def detect_image(filepath):
-    return detector.detect(filepath)
+    try:
+        return detector.detect(filepath)
+    except Exception as e:
+        print(f"DETECT ERROR {filepath}: {e}")
+        return {}
 
 def detect_gif(filepath):
     try:
@@ -44,7 +53,7 @@ def detect_gif(filepath):
             for frame in ImageSequence.Iterator(img):
                 frame_path = "temp_frame.jpg"
                 frame.convert("RGB").save(frame_path)
-                detections = detector.detect(frame_path)
+                detections = detect_image(frame_path)
                 os.remove(frame_path)
                 if is_nsfw(detections):
                     return True
@@ -65,6 +74,7 @@ def scan_file(filepath, sfw_dir, nsfw_dir, dup_dir, log):
 
     ext = filepath.lower()
 
+    # GIF handling
     if ext.endswith(".gif"):
         nsfw = detect_gif(filepath)
     else:
