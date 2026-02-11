@@ -1,3 +1,6 @@
 nudenet
-pyinstaller
 pillow
+pyinstaller
+tensorflow
+deepdanbooru
+numpy
