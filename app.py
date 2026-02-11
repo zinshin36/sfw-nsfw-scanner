@@ -7,19 +7,19 @@ from tkinter import filedialog, scrolledtext
 from nudenet import NudeDetector
 from PIL import Image, ImageSequence
 
+# Initialize detector
 detector = NudeDetector()
+
 seen_hashes = set()
 
-# Lower = more aggressive
-NSFW_THRESHOLD = 0.35
+# ULTRA AGGRESSIVE SETTINGS
+NSFW_THRESHOLD = 0.20  # very low = more sensitive
 
-# Only count serious exposure classes
+# Include all classes (exposed + covered + hentai/sexual)
 NSFW_CLASSES = {
-    "EXPOSED_ANUS",
-    "EXPOSED_BREAST",
-    "EXPOSED_BUTTOCKS",
-    "EXPOSED_GENITALIA",
-    "EXPOSED_PUBIC_AREA"
+    "EXPOSED_ANUS", "EXPOSED_BREAST", "EXPOSED_BUTTOCKS", "EXPOSED_GENITALIA", "EXPOSED_PUBIC_AREA",
+    "COVERED_BREAST", "COVERED_GENITALIA", "COVERED_BUTTOCKS", "COVERED_PUBIC_AREA",
+    "HENTAI", "SEXY", "PORN"
 }
 
 def get_file_hash(filepath):
@@ -46,7 +46,6 @@ def detect_gif(filepath):
                 frame.convert("RGB").save(frame_path)
                 detections = detector.detect(frame_path)
                 os.remove(frame_path)
-
                 if is_nsfw(detections):
                     return True
         return False
@@ -66,7 +65,6 @@ def scan_file(filepath, sfw_dir, nsfw_dir, dup_dir, log):
 
     ext = filepath.lower()
 
-    # GIF handling
     if ext.endswith(".gif"):
         nsfw = detect_gif(filepath)
     else:
@@ -111,7 +109,7 @@ def start_scan(log):
 
 def main():
     root = tk.Tk()
-    root.title("SFW / NSFW + Duplicate Scanner (Aggressive Mode)")
+    root.title("SFW / NSFW + Duplicate Scanner (Ultra Aggressive)")
     root.geometry("650x450")
 
     log_box = scrolledtext.ScrolledText(root, state="disabled")
