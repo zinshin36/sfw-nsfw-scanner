@@ -1,27 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
-
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+import os
 
 hiddenimports = collect_submodules("deepdanbooru") + \
+                collect_submodules("nudenet") + \
                 collect_submodules("tensorflow") + \
-                collect_submodules("tensorflow_io") + \
-                collect_submodules("nudenet")
+                collect_submodules("tensorflow_io")
 
 datas = collect_data_files("deepdanbooru") + \
+        collect_data_files("nudenet") + \
         collect_data_files("tensorflow") + \
-        collect_data_files("tensorflow_io") + \
-        collect_data_files("nudenet")
+        collect_data_files("tensorflow_io")
 
 block_cipher = None
 
 a = Analysis(
     ['app.py'],
-    pathex=[],
+    pathex=[os.getcwd()],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     win_no_prefer_redirects=False,
