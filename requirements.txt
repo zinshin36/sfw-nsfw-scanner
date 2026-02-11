@@ -1,6 +1,7 @@
 nudenet
 pillow
 pyinstaller
+tensorflow
+tensorflow-io
+deepdanbooru
 numpy
-onnxruntime
-opencv-python
