@@ -1,161 +1,198 @@
 import os
 import shutil
-import threading
 import hashlib
-import tkinter as tk
-from tkinter import filedialog, scrolledtext
-from nudenet import NudeDetector
+import numpy as np
 from PIL import Image, ImageSequence
-import time
 
-# -------------------------
-# MAX ULTRA AGGRESSIVE SETTINGS
-# -------------------------
-NSFW_THRESHOLD = 0.15  # super low = very sensitive
+from nudenet import NudeDetector
+import deepdanbooru as dd
+import tensorflow as tf
 
-NSFW_CLASSES = {
-    "EXPOSED_ANUS", "EXPOSED_BREAST", "EXPOSED_BUTTOCKS", "EXPOSED_GENITALIA", "EXPOSED_PUBIC_AREA",
-    "COVERED_BREAST", "COVERED_GENITALIA", "COVERED_BUTTOCKS", "COVERED_PUBIC_AREA",
-    "HENTAI", "SEXY", "PORN"
+# ==============================
+# SETTINGS
+# ==============================
+
+DANBOORU_THRESHOLD = 0.12  # aggressive
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+NSFW_DANBOORU_TAGS = {
+    "sex", "anal", "oral", "vaginal",
+    "cum", "ejaculation",
+    "penis", "pussy", "nipples",
+    "breasts", "ass", "anus",
+    "spread_legs", "masturbation",
+    "fingering", "handjob", "blowjob",
+    "bdsm", "hentai", "nude",
+    "no_bra", "no_panties",
+    "cameltoe"
 }
 
-# -------------------------
-# Initialize detector
-# -------------------------
-def init_detector():
-    # Retry if ONNX fails initially
-    for _ in range(3):
-        try:
-            return NudeDetector()
-        except:
-            time.sleep(1)
-    raise Exception("Failed to initialize NudeDetector")
+# ==============================
+# LOAD MODELS (LOAD ONCE)
+# ==============================
 
-detector = init_detector()
-seen_hashes = set()
+print("Loading models...")
 
-# -------------------------
-# Hash function for duplicates
-# -------------------------
-def get_file_hash(filepath):
+danbooru_model = dd.project.load_model_from_project(
+    dd.project.load_project("deepdanbooru-project")
+)
+
+nudenet_detector = NudeDetector()
+
+print("Models loaded.")
+
+# ==============================
+# HELPERS
+# ==============================
+
+def hash_file(path):
     hasher = hashlib.md5()
-    with open(filepath, "rb") as f:
-        while chunk := f.read(8192):
-            hasher.update(chunk)
+    with open(path, "rb") as f:
+        buf = f.read()
+        hasher.update(buf)
     return hasher.hexdigest()
 
-# -------------------------
-# NSFW detection logic
-# -------------------------
-def is_nsfw(detections):
-    if not detections:
-        return True  # treat empty or failed detections as NSFW
-    for d in detections:
-        if d["class"] in NSFW_CLASSES and d["score"] > NSFW_THRESHOLD:
-            return True
-    return False
+def resize_image(image):
+    image = image.resize((512, 512))
+    return image
 
-def detect_image(filepath):
-    try:
-        return detector.detect(filepath)
-    except Exception as e:
-        print(f"DETECT ERROR {filepath}: {e}")
-        return {}
+# ==============================
+# DANBOORU DETECTION (PRIMARY)
+# ==============================
 
-def detect_gif(filepath):
+def detect_with_danbooru(image):
     try:
-        with Image.open(filepath) as img:
-            for frame in ImageSequence.Iterator(img):
-                frame_path = "temp_frame.jpg"
-                frame.convert("RGB").save(frame_path)
-                detections = detect_image(frame_path)
-                os.remove(frame_path)
-                if is_nsfw(detections):
-                    return True
-        return False
+        image = resize_image(image)
+        arr = np.array(image)
+        arr = dd.image.transform_and_pad_image(arr, 512)
+        arr = arr[np.newaxis, ...]
+
+        probs = danbooru_model.predict(arr, verbose=0)[0]
+        tags = danbooru_model.tags
+
+        strongest = None
+        score_max = 0
+
+        for tag, prob in zip(tags, probs):
+            if tag in NSFW_DANBOORU_TAGS and prob > DANBOORU_THRESHOLD:
+                if tag in {"sex", "anal", "oral", "penis", "pussy"}:
+                    return tag
+
+                if prob > score_max:
+                    strongest = tag
+                    score_max = prob
+
+        return strongest
+
     except:
-        return True  # treat unreadable GIFs as NSFW
-        
+        return None
 
-# -------------------------
-# File scanning
-# -------------------------
-def scan_file(filepath, sfw_dir, nsfw_dir, dup_dir, log):
-    file_hash = get_file_hash(filepath)
+# ==============================
+# NUDENET BACKUP
+# ==============================
 
-    # Duplicate detection
-    if file_hash in seen_hashes:
-        shutil.move(filepath, os.path.join(dup_dir, os.path.basename(filepath)))
-        log(f"DUPLICATE → {os.path.basename(filepath)}")
-        return
-    else:
-        seen_hashes.add(file_hash)
+def detect_with_nudenet(path):
+    try:
+        results = nudenet_detector.detect(path)
+        if results:
+            return results[0]["class"]
+        return None
+    except:
+        return None
 
-    ext = filepath.lower()
+# ==============================
+# GIF HANDLING
+# ==============================
 
-    # GIF detection
-    if ext.endswith(".gif"):
-        nsfw = detect_gif(filepath)
-    else:
-        detections = detect_image(filepath)
-        nsfw = is_nsfw(detections)
+def detect_gif(path):
+    try:
+        with Image.open(path) as img:
+            for frame in ImageSequence.Iterator(img):
+                frame = frame.convert("RGB")
+                tag = detect_with_danbooru(frame)
+                if tag:
+                    return tag
+        return None
+    except:
+        return None
 
-    if nsfw:
-        shutil.move(filepath, os.path.join(nsfw_dir, os.path.basename(filepath)))
-        log(f"NSFW → {os.path.basename(filepath)}")
-    else:
-        shutil.move(filepath, os.path.join(sfw_dir, os.path.basename(filepath)))
-        log(f"SFW  → {os.path.basename(filepath)}")
+# ==============================
+# MAIN DETECTION
+# ==============================
 
-def scan_folder(folder, log):
-    global seen_hashes
+def detect_image(path):
+
+    if path.lower().endswith(".gif"):
+        tag = detect_gif(path)
+        if tag:
+            return tag
+        return None
+
+    try:
+        img = Image.open(path).convert("RGB")
+    except:
+        return None
+
+    # 1️⃣ DeepDanbooru FIRST
+    tag = detect_with_danbooru(img)
+    if tag:
+        return tag
+
+    # 2️⃣ NudeNet backup
+    return detect_with_nudenet(path)
+
+# ==============================
+# SCAN FOLDER
+# ==============================
+
+def scan_folder(folder):
+
+    sfw_folder = os.path.join(folder, "SFW")
+    nsfw_folder = os.path.join(folder, "NSFW")
+    dup_folder = os.path.join(folder, "DUPLICATES")
+
+    os.makedirs(sfw_folder, exist_ok=True)
+    os.makedirs(nsfw_folder, exist_ok=True)
+    os.makedirs(dup_folder, exist_ok=True)
+
     seen_hashes = set()
 
-    sfw_dir = os.path.join(folder, "SFW")
-    nsfw_dir = os.path.join(folder, "NSFW")
-    dup_dir = os.path.join(folder, "DUPLICATES")
+    for root, _, files in os.walk(folder):
+        for file in files:
 
-    os.makedirs(sfw_dir, exist_ok=True)
-    os.makedirs(nsfw_dir, exist_ok=True)
-    os.makedirs(dup_dir, exist_ok=True)
+            if not file.lower().endswith(IMAGE_EXTENSIONS):
+                continue
 
-    for file in os.listdir(folder):
-        path = os.path.join(folder, file)
+            full_path = os.path.join(root, file)
 
-        if path.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")) and os.path.isfile(path):
-            try:
-                scan_file(path, sfw_dir, nsfw_dir, dup_dir, log)
-            except Exception as e:
-                log(f"ERROR → {file}: {e}")
+            if "SFW" in full_path or "NSFW" in full_path or "DUPLICATES" in full_path:
+                continue
 
-    log("✔ Folder scan complete")
+            print("Scanning:", file)
 
-def start_scan(log):
-    folder = filedialog.askdirectory()
-    if not folder:
-        return
-    threading.Thread(target=scan_folder, args=(folder, log), daemon=True).start()
+            # Duplicate detection
+            file_hash = hash_file(full_path)
+            if file_hash in seen_hashes:
+                shutil.move(full_path, os.path.join(dup_folder, file))
+                continue
+            seen_hashes.add(file_hash)
 
-# -------------------------
-# GUI
-# -------------------------
-def main():
-    root = tk.Tk()
-    root.title("SFW / NSFW + Duplicate Scanner (MAX ULTRA AGGRESSIVE)")
-    root.geometry("650x450")
+            # Detection
+            result = detect_image(full_path)
 
-    log_box = scrolledtext.ScrolledText(root, state="disabled")
-    log_box.pack(fill="both", expand=True, padx=10, pady=10)
+            if result:
+                tag_folder = os.path.join(nsfw_folder, result)
+                os.makedirs(tag_folder, exist_ok=True)
+                shutil.move(full_path, os.path.join(tag_folder, file))
+            else:
+                shutil.move(full_path, os.path.join(sfw_folder, file))
 
-    def log(msg):
-        log_box.configure(state="normal")
-        log_box.insert("end", msg + "\n")
-        log_box.configure(state="disabled")
-        log_box.see("end")
+    print("Scan complete.")
 
-    tk.Button(root, text="Scan Folder", command=lambda: start_scan(log), height=2).pack(pady=10)
-
-    root.mainloop()
+# ==============================
+# ENTRY
+# ==============================
 
 if __name__ == "__main__":
-    main()
+    target = input("Enter folder path to scan: ").strip()
+    scan_folder(target)
