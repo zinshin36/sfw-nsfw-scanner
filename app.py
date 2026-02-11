@@ -5,11 +5,22 @@ import hashlib
 import tkinter as tk
 from tkinter import filedialog, scrolledtext
 from nudenet import NudeDetector
+from PIL import Image, ImageSequence
 
-# Initialize detector normally (no manual model handling needed)
 detector = NudeDetector()
-
 seen_hashes = set()
+
+# Lower = more aggressive
+NSFW_THRESHOLD = 0.35
+
+# Only count serious exposure classes
+NSFW_CLASSES = {
+    "EXPOSED_ANUS",
+    "EXPOSED_BREAST",
+    "EXPOSED_BUTTOCKS",
+    "EXPOSED_GENITALIA",
+    "EXPOSED_PUBIC_AREA"
+}
 
 def get_file_hash(filepath):
     hasher = hashlib.md5()
@@ -20,9 +31,27 @@ def get_file_hash(filepath):
 
 def is_nsfw(detections):
     for d in detections:
-        if d["score"] > 0.6:
+        if d["class"] in NSFW_CLASSES and d["score"] > NSFW_THRESHOLD:
             return True
     return False
+
+def detect_image(filepath):
+    return detector.detect(filepath)
+
+def detect_gif(filepath):
+    try:
+        with Image.open(filepath) as img:
+            for frame in ImageSequence.Iterator(img):
+                frame_path = "temp_frame.jpg"
+                frame.convert("RGB").save(frame_path)
+                detections = detector.detect(frame_path)
+                os.remove(frame_path)
+
+                if is_nsfw(detections):
+                    return True
+        return False
+    except:
+        return False
 
 def scan_file(filepath, sfw_dir, nsfw_dir, dup_dir, log):
     file_hash = get_file_hash(filepath)
@@ -35,10 +64,16 @@ def scan_file(filepath, sfw_dir, nsfw_dir, dup_dir, log):
     else:
         seen_hashes.add(file_hash)
 
-    # NSFW detection
-    detections = detector.detect(filepath)
+    ext = filepath.lower()
 
-    if is_nsfw(detections):
+    # GIF handling
+    if ext.endswith(".gif"):
+        nsfw = detect_gif(filepath)
+    else:
+        detections = detect_image(filepath)
+        nsfw = is_nsfw(detections)
+
+    if nsfw:
         shutil.move(filepath, os.path.join(nsfw_dir, os.path.basename(filepath)))
         log(f"NSFW → {os.path.basename(filepath)}")
     else:
@@ -60,7 +95,7 @@ def scan_folder(folder, log):
     for file in os.listdir(folder):
         path = os.path.join(folder, file)
 
-        if path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")) and os.path.isfile(path):
+        if path.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")) and os.path.isfile(path):
             try:
                 scan_file(path, sfw_dir, nsfw_dir, dup_dir, log)
             except Exception as e:
@@ -76,8 +111,8 @@ def start_scan(log):
 
 def main():
     root = tk.Tk()
-    root.title("SFW / NSFW + Duplicate Scanner")
-    root.geometry("600x450")
+    root.title("SFW / NSFW + Duplicate Scanner (Aggressive Mode)")
+    root.geometry("650x450")
 
     log_box = scrolledtext.ScrolledText(root, state="disabled")
     log_box.pack(fill="both", expand=True, padx=10, pady=10)
@@ -94,4 +129,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
