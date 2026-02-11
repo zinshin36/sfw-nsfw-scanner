@@ -6,13 +6,12 @@ from PIL import Image, ImageSequence
 
 from nudenet import NudeDetector
 import deepdanbooru as dd
-import tensorflow as tf
 
 # ==============================
 # SETTINGS
 # ==============================
 
-DANBOORU_THRESHOLD = 0.12  # aggressive
+DANBOORU_THRESHOLD = 0.12
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
 NSFW_DANBOORU_TAGS = {
@@ -27,16 +26,11 @@ NSFW_DANBOORU_TAGS = {
     "cameltoe"
 }
 
-# ==============================
-# LOAD MODELS (LOAD ONCE)
-# ==============================
+print("Loading DeepDanbooru model...")
+danbooru_model = dd.DeepDanbooru()
+danbooru_model.load_model()
 
-print("Loading models...")
-
-danbooru_model = dd.project.load_model_from_project(
-    dd.project.load_project("deepdanbooru-project")
-)
-
+print("Loading NudeNet...")
 nudenet_detector = NudeDetector()
 
 print("Models loaded.")
@@ -48,33 +42,19 @@ print("Models loaded.")
 def hash_file(path):
     hasher = hashlib.md5()
     with open(path, "rb") as f:
-        buf = f.read()
-        hasher.update(buf)
+        hasher.update(f.read())
     return hasher.hexdigest()
-
-def resize_image(image):
-    image = image.resize((512, 512))
-    return image
-
-# ==============================
-# DANBOORU DETECTION (PRIMARY)
-# ==============================
 
 def detect_with_danbooru(image):
     try:
-        image = resize_image(image)
-        arr = np.array(image)
-        arr = dd.image.transform_and_pad_image(arr, 512)
-        arr = arr[np.newaxis, ...]
-
-        probs = danbooru_model.predict(arr, verbose=0)[0]
-        tags = danbooru_model.tags
+        results = danbooru_model.predict(image)
 
         strongest = None
         score_max = 0
 
-        for tag, prob in zip(tags, probs):
+        for tag, prob in results.items():
             if tag in NSFW_DANBOORU_TAGS and prob > DANBOORU_THRESHOLD:
+
                 if tag in {"sex", "anal", "oral", "penis", "pussy"}:
                     return tag
 
@@ -87,10 +67,6 @@ def detect_with_danbooru(image):
     except:
         return None
 
-# ==============================
-# NUDENET BACKUP
-# ==============================
-
 def detect_with_nudenet(path):
     try:
         results = nudenet_detector.detect(path)
@@ -99,10 +75,6 @@ def detect_with_nudenet(path):
         return None
     except:
         return None
-
-# ==============================
-# GIF HANDLING
-# ==============================
 
 def detect_gif(path):
     try:
@@ -115,10 +87,6 @@ def detect_gif(path):
         return None
     except:
         return None
-
-# ==============================
-# MAIN DETECTION
-# ==============================
 
 def detect_image(path):
 
@@ -133,17 +101,13 @@ def detect_image(path):
     except:
         return None
 
-    # 1️⃣ DeepDanbooru FIRST
+    # Anime first
     tag = detect_with_danbooru(img)
     if tag:
         return tag
 
-    # 2️⃣ NudeNet backup
+    # Real content backup
     return detect_with_nudenet(path)
-
-# ==============================
-# SCAN FOLDER
-# ==============================
 
 def scan_folder(folder):
 
@@ -165,7 +129,7 @@ def scan_folder(folder):
 
             full_path = os.path.join(root, file)
 
-            if "SFW" in full_path or "NSFW" in full_path or "DUPLICATES" in full_path:
+            if any(x in full_path for x in ["SFW", "NSFW", "DUPLICATES"]):
                 continue
 
             print("Scanning:", file)
@@ -188,10 +152,6 @@ def scan_folder(folder):
                 shutil.move(full_path, os.path.join(sfw_folder, file))
 
     print("Scan complete.")
-
-# ==============================
-# ENTRY
-# ==============================
 
 if __name__ == "__main__":
     target = input("Enter folder path to scan: ").strip()
