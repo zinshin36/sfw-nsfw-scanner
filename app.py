@@ -4,8 +4,8 @@ import hashlib
 import numpy as np
 from PIL import Image, ImageSequence
 
-from nudenet import NudeDetector
 import deepdanbooru as dd
+from nudenet import NudeDetector
 
 # ==============================
 # SETTINGS
@@ -24,20 +24,19 @@ NSFW_TAGS = {
 }
 
 # ==============================
-# LOAD MODELS (CORRECT METHOD)
+# LOAD MODELS (WORKING METHOD)
 # ==============================
 
-print("Loading DeepDanbooru model...")
+print("Loading DeepDanbooru project...")
 
-project = dd.project.load_project(
-    dd.project.get_default_project_path()
-)
+project_path = dd.project.get_project_path()
+project = dd.project.load_project(project_path)
 danbooru_model = dd.project.load_model_from_project(project)
 
-print("Loading NudeNet model...")
+print("Loading NudeNet...")
 nudenet_detector = NudeDetector()
 
-print("Models loaded.")
+print("Models loaded successfully.")
 
 # ==============================
 # HELPERS
@@ -111,12 +110,10 @@ def detect_image(path):
     except:
         return None
 
-    # Anime first
     tag = detect_with_danbooru(img)
     if tag:
         return tag
 
-    # Real content backup
     return detect_with_nudenet(path)
 
 def scan_folder(folder):
@@ -144,7 +141,6 @@ def scan_folder(folder):
 
             print("Scanning:", file)
 
-            # Duplicate detection
             file_hash = hash_file(full_path)
             if file_hash in seen_hashes:
                 shutil.move(full_path, os.path.join(dup_folder, file))
