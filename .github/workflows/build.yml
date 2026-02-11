@@ -20,10 +20,10 @@ jobs:
           pip install --no-cache-dir -r requirements.txt
           pip install pyinstaller
 
-      - name: Build using spec file
+      - name: Build EXE using spec
         run: pyinstaller app.spec
 
-      - name: Upload EXE
+      - name: Upload EXE folder
         uses: actions/upload-artifact@v4
         with:
           name: nsfw-scanner
