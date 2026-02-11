@@ -19,12 +19,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download DeepDanbooru model
-        run: |
-          python -m deepdanbooru download
-
       - name: Build EXE
-        run: pyinstaller --onefile --noconsole --collect-all nudenet --collect-all deepdanbooru app.py
+        run: |
+          pyinstaller --onefile --noconsole --collect-all nudenet --collect-all deepdanbooru app.py
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
