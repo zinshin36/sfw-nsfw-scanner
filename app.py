@@ -1,5 +1,4 @@
 import os
-import sys
 import shutil
 import threading
 import hashlib
@@ -7,19 +6,8 @@ import tkinter as tk
 from tkinter import filedialog, scrolledtext
 from nudenet import NudeDetector
 
-# Fix for PyInstaller path
-def resource_path(relative_path):
-    if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
-
-# Initialize NudeNet detector
+# Initialize detector normally (no manual model handling needed)
 detector = NudeDetector()
-
-# If running inside EXE, reload model correctly
-if hasattr(sys, "_MEIPASS"):
-    model_file = os.path.basename(detector.model_path)
-    detector = NudeDetector(model_path=resource_path(model_file))
 
 seen_hashes = set()
 
@@ -106,3 +94,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
