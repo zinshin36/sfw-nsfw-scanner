@@ -22,13 +22,8 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build EXE (FULL COLLECTION MODE)
-        run: |
-          pyinstaller app.py --onedir --console --clean ^
-          --collect-submodules deepdanbooru ^
-          --collect-data deepdanbooru ^
-          --collect-submodules nudenet ^
-          --collect-data nudenet
+      - name: Build EXE
+        run: pyinstaller app.py --onedir --console --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet
 
       - name: Upload Build Folder
         uses: actions/upload-artifact@v4
