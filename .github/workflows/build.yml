@@ -19,8 +19,16 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pip install deepdanbooru==1.0.0
+          pip install tensorflow-cpu==2.10.1
+          pip install tensorflow-io-gcs-filesystem==0.27.0
+          pip install nudenet==3.4.2
+          pip install pillow==10.2.0
+          pip install numpy==1.23.5
+          pip install pyinstaller==6.6.0
+
+      - name: Verify DeepDanbooru Install
+        run: python -c "import deepdanbooru; print('DeepDanbooru installed successfully')"
 
       - name: Build EXE
         run: pyinstaller app.py --onedir --console --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet
