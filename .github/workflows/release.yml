@@ -34,8 +34,12 @@ jobs:
         run: |
           curl -L -o model.zip https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip
           Expand-Archive -Path model.zip -DestinationPath .
+
+          # Find extracted folder dynamically
+          $extracted = Get-ChildItem -Directory | Where-Object { $_.Name -like "deepdanbooru*" } | Select-Object -First 1
+
           mkdir model
-          Move-Item -Path deepdanbooru-v3-20211112-sgd-e28 -Destination model
+          Move-Item -Path $extracted.FullName -Destination model
 
       - name: Build application
         run: pyinstaller app.py --onedir --windowed --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet --add-data "model;model"
