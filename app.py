@@ -1,7 +1,4 @@
 import os
-TEMP_DIR = "temp"
-os.makedirs(TEMP_DIR, exist_ok=True)
-import os
 import traceback
 import datetime
 import shutil
@@ -9,19 +6,17 @@ import hashlib
 import numpy as np
 from PIL import Image, ImageSequence
 
-# =========================
-# LOGGING
-# =========================
+# Create temp folder for logs
 TEMP_DIR = "temp"
-LOG_FILE = os.path.join(TEMP_DIR, "log.txt")
 os.makedirs(TEMP_DIR, exist_ok=True)
+LOG_FILE = os.path.join(TEMP_DIR, "log.txt")
 
 def log(msg):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full = f"[{ts}] {msg}"
     print(full)
-    with open(LOG_FILE,"a",encoding="utf-8") as f:
-        f.write(full+"\n")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(full + "\n")
 
 def log_exception(e):
     log("===== EXCEPTION =====")
@@ -31,7 +26,7 @@ def log_exception(e):
 log("===== PROGRAM START =====")
 
 # =========================
-# IMPORTS
+# Imports
 # =========================
 try:
     from deepdanbooru.project import load_project
@@ -45,10 +40,10 @@ except Exception as e:
     raise
 
 # =========================
-# SETTINGS
+# Settings
 # =========================
 DANBOORU_THRESHOLD = 0.1  # very aggressive
-IMAGE_EXTENSIONS = (".jpg",".jpeg",".png",".webp",".gif")
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 NSFW_TAGS = {
     "sex","anal","oral","vaginal","cum","penis","pussy","nipples",
     "breasts","spread_legs","ass","masturbation","blowjob","handjob",
@@ -56,7 +51,7 @@ NSFW_TAGS = {
 }
 
 # =========================
-# LOAD MODELS
+# Load Models
 # =========================
 try:
     log("Loading DeepDanbooru...")
@@ -79,11 +74,12 @@ except Exception as e:
     raise
 
 # =========================
-# HELPERS
+# Helpers
 # =========================
 def hash_file(path):
     hasher = hashlib.md5()
-    with open(path,"rb") as f: hasher.update(f.read())
+    with open(path,"rb") as f:
+        hasher.update(f.read())
     return hasher.hexdigest()
 
 def detect_with_danbooru(img):
@@ -143,43 +139,45 @@ def detect_image(path):
         return None
 
 # =========================
-# SCANNER
+# Scan folder
 # =========================
 def scan_folder(folder):
     sfw = os.path.join(folder,"SFW")
     nsfw = os.path.join(folder,"NSFW")
     dup = os.path.join(folder,"DUPLICATES")
-    os.makedirs(sfw,exist_ok=True)
-    os.makedirs(nsfw,exist_ok=True)
-    os.makedirs(dup,exist_ok=True)
+    os.makedirs(sfw, exist_ok=True)
+    os.makedirs(nsfw, exist_ok=True)
+    os.makedirs(dup, exist_ok=True)
 
     seen = set()
 
-    for root,_,files in os.walk(folder):
+    for root, _, files in os.walk(folder):
         for file in files:
-            if not file.lower().endswith(IMAGE_EXTENSIONS): continue
-            full = os.path.join(root,file)
-            if any(x in full for x in ["SFW","NSFW","DUPLICATES"]): continue
+            if not file.lower().endswith(IMAGE_EXTENSIONS):
+                continue
+            full = os.path.join(root, file)
+            if any(x in full for x in ["SFW","NSFW","DUPLICATES"]):
+                continue
             log(f"Scanning {file}")
             h = hash_file(full)
             if h in seen:
-                shutil.move(full, os.path.join(dup,file))
+                shutil.move(full, os.path.join(dup, file))
                 log(f"Duplicate -> {file}")
                 continue
             seen.add(h)
             result = detect_image(full)
             if result:
-                tag_folder = os.path.join(nsfw,result)
-                os.makedirs(tag_folder,exist_ok=True)
-                shutil.move(full, os.path.join(tag_folder,file))
+                tag_folder = os.path.join(nsfw, result)
+                os.makedirs(tag_folder, exist_ok=True)
+                shutil.move(full, os.path.join(tag_folder, file))
                 log(f"NSFW {result} -> {file}")
             else:
-                shutil.move(full, os.path.join(sfw,file))
+                shutil.move(full, os.path.join(sfw, file))
                 log(f"SFW -> {file}")
     log("Scan complete.")
 
 # =========================
-# MAIN
+# Main
 # =========================
 if __name__=="__main__":
     try:
