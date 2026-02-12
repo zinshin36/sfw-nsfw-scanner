@@ -29,12 +29,13 @@ jobs:
           pip install nudenet==3.4.2
           pip install pyinstaller==6.6.0
 
-      - name: Download DeepDanbooru pretrained model
+      - name: Download and extract DeepDanbooru model
+        shell: pwsh
         run: |
           curl -L -o model.zip https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip
-          tar -xf model.zip
+          Expand-Archive -Path model.zip -DestinationPath .
           mkdir model
-          move deepdanbooru-v3-20211112-sgd-e28 model\
+          Move-Item -Path deepdanbooru-v3-20211112-sgd-e28 -Destination model
 
       - name: Build application
         run: pyinstaller app.py --onedir --windowed --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet --add-data "model;model"
