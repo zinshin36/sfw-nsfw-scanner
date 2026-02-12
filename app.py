@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageSequence
 
 # =========================
-# LOGGING BOOTSTRAP
+# LOGGING
 # =========================
 TEMP_DIR = "temp"
 LOG_FILE = os.path.join(TEMP_DIR, "log.txt")
@@ -28,7 +28,7 @@ def log_exception(e):
 log("===== PROGRAM START =====")
 
 # =========================
-# SAFE IMPORTS
+# IMPORTS
 # =========================
 try:
     from deepdanbooru.project import load_project
@@ -44,7 +44,7 @@ except Exception as e:
 # =========================
 # SETTINGS
 # =========================
-DANBOORU_THRESHOLD = 0.1  # lower = more aggressive
+DANBOORU_THRESHOLD = 0.1  # aggressive
 IMAGE_EXTENSIONS = (".jpg",".jpeg",".png",".webp",".gif")
 NSFW_TAGS = {
     "sex","anal","oral","vaginal","cum","penis","pussy","nipples",
