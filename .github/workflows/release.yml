@@ -27,8 +27,6 @@ jobs:
           pip install tensorflow-io==0.27.0
           pip install tensorflow-io-gcs-filesystem==0.27.0
           pip install nudenet==3.4.2
-          pip install pillow==10.2.0
-          pip install numpy==1.23.5
           pip install pyinstaller==6.6.0
 
       - name: Download DeepDanbooru pretrained model
