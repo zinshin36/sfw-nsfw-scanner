@@ -1,15 +1,37 @@
 import os
 import shutil
 import hashlib
+import traceback
+import datetime
 import numpy as np
 from PIL import Image, ImageSequence
 
-# IMPORTANT: Do NOT import deepdanbooru normally
 from deepdanbooru.project import load_project
 from deepdanbooru.model import load_model_from_project
 from deepdanbooru.image import transform_and_pad_image
 
 from nudenet import NudeDetector
+
+# =========================
+# LOGGING SETUP
+# =========================
+
+TEMP_DIR = "temp"
+LOG_FILE = os.path.join(TEMP_DIR, "log.txt")
+
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+def log(message):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_message = f"[{timestamp}] {message}"
+    print(full_message)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(full_message + "\n")
+
+def log_exception(e):
+    log("ERROR OCCURRED:")
+    log(str(e))
+    log(traceback.format_exc())
 
 # =========================
 # SETTINGS
@@ -31,15 +53,23 @@ NSFW_TAGS = {
 # LOAD MODELS
 # =========================
 
-print("Loading DeepDanbooru project...")
-project_path = os.path.expanduser("~/.deepdanbooru")
-project = load_project(project_path)
-model = load_model_from_project(project)
-print("DeepDanbooru loaded.")
+try:
+    log("Loading DeepDanbooru project...")
+    project_path = os.path.expanduser("~/.deepdanbooru")
+    project = load_project(project_path)
+    model = load_model_from_project(project)
+    log("DeepDanbooru loaded successfully.")
+except Exception as e:
+    log_exception(e)
+    raise
 
-print("Loading NudeNet...")
-nudenet_detector = NudeDetector()
-print("NudeNet loaded.")
+try:
+    log("Loading NudeNet...")
+    nudenet_detector = NudeDetector()
+    log("NudeNet loaded successfully.")
+except Exception as e:
+    log_exception(e)
+    raise
 
 # =========================
 # HELPERS
@@ -52,99 +82,131 @@ def hash_file(path):
     return hasher.hexdigest()
 
 def detect_with_danbooru(image):
-    image = image.resize((512, 512))
-    arr = np.array(image)
-    arr = transform_and_pad_image(arr, 512)
-    arr = arr[np.newaxis, ...]
+    try:
+        image = image.resize((512, 512))
+        arr = np.array(image)
+        arr = transform_and_pad_image(arr, 512)
+        arr = arr[np.newaxis, ...]
 
-    probs = model.predict(arr)[0]
-    tags = model.tags
+        probs = model.predict(arr)[0]
+        tags = model.tags
 
-    strongest = None
-    best_score = 0
+        strongest = None
+        best_score = 0
 
-    for tag, prob in zip(tags, probs):
-        if tag in NSFW_TAGS and prob > DANBOORU_THRESHOLD:
-            if tag in {"sex", "anal", "penis", "pussy"}:
-                return tag
-            if prob > best_score:
-                strongest = tag
-                best_score = prob
+        for tag, prob in zip(tags, probs):
+            if tag in NSFW_TAGS and prob > DANBOORU_THRESHOLD:
+                if tag in {"sex", "anal", "penis", "pussy"}:
+                    return tag
+                if prob > best_score:
+                    strongest = tag
+                    best_score = prob
 
-    return strongest
-
-def detect_with_nudenet(path):
-    results = nudenet_detector.detect(path)
-    if results:
-        return results[0]["class"]
-    return None
-
-def detect_gif(path):
-    with Image.open(path) as img:
-        for frame in ImageSequence.Iterator(img):
-            frame = frame.convert("RGB")
-            tag = detect_with_danbooru(frame)
-            if tag:
-                return tag
-    return None
-
-def detect_image(path):
-    if path.lower().endswith(".gif"):
-        tag = detect_gif(path)
-        if tag:
-            return tag
+        return strongest
+    except Exception as e:
+        log_exception(e)
         return None
 
-    img = Image.open(path).convert("RGB")
+def detect_with_nudenet(path):
+    try:
+        results = nudenet_detector.detect(path)
+        if results:
+            return results[0]["class"]
+        return None
+    except Exception as e:
+        log_exception(e)
+        return None
 
-    tag = detect_with_danbooru(img)
-    if tag:
-        return tag
+def detect_gif(path):
+    try:
+        with Image.open(path) as img:
+            for frame in ImageSequence.Iterator(img):
+                frame = frame.convert("RGB")
+                tag = detect_with_danbooru(frame)
+                if tag:
+                    return tag
+        return None
+    except Exception as e:
+        log_exception(e)
+        return None
 
-    return detect_with_nudenet(path)
+def detect_image(path):
+    try:
+        if path.lower().endswith(".gif"):
+            tag = detect_gif(path)
+            if tag:
+                return tag
+            return None
+
+        img = Image.open(path).convert("RGB")
+
+        tag = detect_with_danbooru(img)
+        if tag:
+            return tag
+
+        return detect_with_nudenet(path)
+    except Exception as e:
+        log_exception(e)
+        return None
 
 def scan_folder(folder):
 
-    sfw_folder = os.path.join(folder, "SFW")
-    nsfw_folder = os.path.join(folder, "NSFW")
-    dup_folder = os.path.join(folder, "DUPLICATES")
+    try:
+        sfw_folder = os.path.join(folder, "SFW")
+        nsfw_folder = os.path.join(folder, "NSFW")
+        dup_folder = os.path.join(folder, "DUPLICATES")
 
-    os.makedirs(sfw_folder, exist_ok=True)
-    os.makedirs(nsfw_folder, exist_ok=True)
-    os.makedirs(dup_folder, exist_ok=True)
+        os.makedirs(sfw_folder, exist_ok=True)
+        os.makedirs(nsfw_folder, exist_ok=True)
+        os.makedirs(dup_folder, exist_ok=True)
 
-    seen_hashes = set()
+        seen_hashes = set()
 
-    for root, _, files in os.walk(folder):
-        for file in files:
+        for root, _, files in os.walk(folder):
+            for file in files:
 
-            if not file.lower().endswith(IMAGE_EXTENSIONS):
-                continue
+                if not file.lower().endswith(IMAGE_EXTENSIONS):
+                    continue
 
-            full_path = os.path.join(root, file)
+                full_path = os.path.join(root, file)
 
-            if any(x in full_path for x in ["SFW", "NSFW", "DUPLICATES"]):
-                continue
+                if any(x in full_path for x in ["SFW", "NSFW", "DUPLICATES"]):
+                    continue
 
-            print("Scanning:", file)
+                log(f"Scanning: {file}")
 
-            file_hash = hash_file(full_path)
-            if file_hash in seen_hashes:
-                shutil.move(full_path, os.path.join(dup_folder, file))
-                continue
-            seen_hashes.add(file_hash)
+                file_hash = hash_file(full_path)
+                if file_hash in seen_hashes:
+                    shutil.move(full_path, os.path.join(dup_folder, file))
+                    log(f"Duplicate moved: {file}")
+                    continue
+                seen_hashes.add(file_hash)
 
-            result = detect_image(full_path)
+                result = detect_image(full_path)
 
-            if result:
-                tag_folder = os.path.join(nsfw_folder, result)
-                os.makedirs(tag_folder, exist_ok=True)
-                shutil.move(full_path, os.path.join(tag_folder, file))
-            else:
-                shutil.move(full_path, os.path.join(sfw_folder, file))
+                if result:
+                    tag_folder = os.path.join(nsfw_folder, result)
+                    os.makedirs(tag_folder, exist_ok=True)
+                    shutil.move(full_path, os.path.join(tag_folder, file))
+                    log(f"NSFW detected ({result}): {file}")
+                else:
+                    shutil.move(full_path, os.path.join(sfw_folder, file))
+                    log(f"SFW: {file}")
 
-    print("Scan complete.")
+        log("Scan complete.")
+
+    except Exception as e:
+        log_exception(e)
+        raise
+
+# =========================
+# MAIN
+# =========================
 
 if __name__ == "__main__":
-    target = input("Enter folder path to scan: ").strip()
-    scan_folder(target)
+    try:
+        folder = input("Enter folder path to scan: ").strip()
+        scan_folder(folder)
+    except Exception as e:
+        log_exception(e)
+        input("Fatal error occurred. Press Enter to exit.")
