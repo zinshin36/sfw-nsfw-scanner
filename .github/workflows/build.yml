@@ -32,6 +32,8 @@ jobs:
           --hidden-import deepdanbooru.data
           --hidden-import deepdanbooru.model
           --hidden-import deepdanbooru.project
+          --hidden-import deepdanbooru.image
+          --hidden-import deepdanbooru.tags
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
