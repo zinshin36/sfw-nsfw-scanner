@@ -1,7 +1,7 @@
-nudenet==3.4.2
-pillow==10.2.0
-pyinstaller==6.6.0
+deepdanbooru==1.0.0
 tensorflow-cpu==2.10.1
 tensorflow-io-gcs-filesystem==0.27.0
-deepdanbooru==1.0.0
+nudenet==3.4.2
+pillow==10.2.0
 numpy==1.23.5
+pyinstaller==6.6.0
