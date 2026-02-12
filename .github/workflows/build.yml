@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build NSFW Scanner EXE
 
 on:
   workflow_dispatch:
@@ -20,12 +20,18 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: PATCH deepdanbooru
+      - name: Patch DeepDanbooru
         run: python patch_deepdanbooru.py
 
       - name: Build EXE with PyInstaller
         run: >
-          pyinstaller app.py --onefile --console --clean --additional-hooks-dir=hooks --collect-all nudenet --hidden-import deepdanbooru.commands
+          pyinstaller app.py --onefile --console --clean
+          --additional-hooks-dir=hooks
+          --collect-all nudenet
+          --hidden-import deepdanbooru
+          --hidden-import deepdanbooru.data
+          --hidden-import deepdanbooru.model
+          --hidden-import deepdanbooru.project
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
