@@ -1,7 +1,7 @@
 import os
 import site
 
-# Locate DeepDanbooru
+# Locate DeepDanbooru __init__.py
 found = False
 for sp in site.getsitepackages():
     init_path = os.path.join(sp, "deepdanbooru", "__init__.py")
@@ -12,7 +12,7 @@ for sp in site.getsitepackages():
 if not found:
     raise FileNotFoundError("Cannot find deepdanbooru __init__.py")
 
-# Comment out CLI import
+# Comment out CLI import to avoid PyInstaller issues
 with open(init_path, "r", encoding="utf-8") as f:
     content = f.read()
 
