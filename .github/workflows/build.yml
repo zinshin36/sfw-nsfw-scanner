@@ -20,9 +20,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
-      - name: Build EXE (ONEDIR MODE)
-        run: pyinstaller app.py --onedir --console --clean --collect-all deepdanbooru --collect-all nudenet
+      - name: Build EXE (FULL COLLECTION MODE)
+        run: |
+          pyinstaller app.py --onedir --console --clean ^
+          --collect-submodules deepdanbooru ^
+          --collect-data deepdanbooru ^
+          --collect-submodules nudenet ^
+          --collect-data nudenet
 
       - name: Upload Build Folder
         uses: actions/upload-artifact@v4
