@@ -1,0 +1,40 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: PATCH deepdanbooru
+        run: python patch_deepdanbooru.py
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller app.py --onefile --console --clean \
+          --collect-all deepdanbooru \
+          --collect-all nudenet \
+          --hidden-import deepdanbooru.data \
+          --hidden-import deepdanbooru.model \
+          --hidden-import deepdanbooru.project \
+          --hidden-import deepdanbooru.commands
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsfw-scanner
+          path: dist/app.exe
