@@ -44,7 +44,7 @@ except Exception as e:
 # =========================
 # SETTINGS
 # =========================
-DANBOORU_THRESHOLD = 0.1  # aggressive
+DANBOORU_THRESHOLD = 0.1  # very aggressive
 IMAGE_EXTENSIONS = (".jpg",".jpeg",".png",".webp",".gif")
 NSFW_TAGS = {
     "sex","anal","oral","vaginal","cum","penis","pussy","nipples",
