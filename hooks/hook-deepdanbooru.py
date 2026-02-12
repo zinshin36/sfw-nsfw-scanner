@@ -1,3 +1,4 @@
 from PyInstaller.utils.hooks import collect_all
 
-datas, binaries, hiddenimports = collect_all('deepdanbooru')
+# Collect all DeepDanbooru files
+datas, binaries, hiddenimports = collect_all("deepdanbooru")
