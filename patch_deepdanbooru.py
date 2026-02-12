@@ -1,6 +1,7 @@
 import os
 import site
 
+# Locate DeepDanbooru
 found = False
 for sp in site.getsitepackages():
     init_path = os.path.join(sp, "deepdanbooru", "__init__.py")
@@ -9,8 +10,9 @@ for sp in site.getsitepackages():
         break
 
 if not found:
-    raise FileNotFoundError("Could not find deepdanbooru __init__.py")
+    raise FileNotFoundError("Cannot find deepdanbooru __init__.py")
 
+# Comment out CLI import
 with open(init_path, "r", encoding="utf-8") as f:
     content = f.read()
 
