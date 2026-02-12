@@ -1,188 +1,99 @@
 import os
-import traceback
-import datetime
-import shutil
-import hashlib
-import numpy as np
-from PIL import Image, ImageSequence
+import sys
+import logging
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
-# Create temp folder for logs
-TEMP_DIR = "temp"
-os.makedirs(TEMP_DIR, exist_ok=True)
-LOG_FILE = os.path.join(TEMP_DIR, "log.txt")
+import tensorflow as tf
+import deepdanbooru.project as dd_project
+import deepdanbooru.model as dd_model
 
-def log(msg):
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full = f"[{ts}] {msg}"
-    print(full)
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(full + "\n")
-
-def log_exception(e):
-    log("===== EXCEPTION =====")
-    log(str(e))
-    log(traceback.format_exc())
-
-log("===== PROGRAM START =====")
 
 # =========================
-# Imports
+# Logging Setup
 # =========================
-try:
-    from deepdanbooru.project import load_project
-    from deepdanbooru.model import load_model_from_project
-    from deepdanbooru.image import transform_and_pad_image
-    from nudenet import NudeDetector
-    log("Imports loaded successfully.")
-except Exception as e:
-    log_exception(e)
-    input("Import crash. Check temp/log.txt")
-    raise
+
+LOG_FILE = "app.log"
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+logging.info("===== PROGRAM START =====")
+
 
 # =========================
-# Settings
+# DeepDanbooru Loader
 # =========================
-DANBOORU_THRESHOLD = 0.1  # very aggressive
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
-NSFW_TAGS = {
-    "sex","anal","oral","vaginal","cum","penis","pussy","nipples",
-    "breasts","spread_legs","ass","masturbation","blowjob","handjob",
-    "hentai","nude"
-}
+
+def load_deepdanbooru_model(project_path):
+    project = dd_project.load_project_from_path(project_path)
+    model = dd_model.create_model_from_project(project)
+    model.load_weights(project.weights_path)
+    return model, project.tags
+
 
 # =========================
-# Load Models
+# GUI Application
 # =========================
-try:
-    log("Loading DeepDanbooru...")
-    project_path = os.path.expanduser("~/.deepdanbooru")
-    project = load_project(project_path)
-    model = load_model_from_project(project)
-    log("DeepDanbooru loaded.")
-except Exception as e:
-    log_exception(e)
-    input("DeepDanbooru failed. Check log.")
-    raise
 
-try:
-    log("Loading NudeNet...")
-    nudenet_detector = NudeDetector()
-    log("NudeNet loaded.")
-except Exception as e:
-    log_exception(e)
-    input("NudeNet failed. Check log.")
-    raise
+class NSFWScannerApp:
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("NSFW Scanner")
+        self.root.geometry("400x200")
+
+        self.model = None
+        self.tags = None
+
+        self.create_widgets()
+
+    def create_widgets(self):
+
+        tk.Label(self.root, text="NSFW Scanner", font=("Arial", 16)).pack(pady=10)
+
+        tk.Button(
+            self.root,
+            text="Load DeepDanbooru Model",
+            command=self.select_model_folder,
+            width=30
+        ).pack(pady=5)
+
+        tk.Button(
+            self.root,
+            text="Exit",
+            command=self.root.quit,
+            width=30
+        ).pack(pady=5)
+
+    def select_model_folder(self):
+        folder = filedialog.askdirectory(title="Select DeepDanbooru Project Folder")
+        if not folder:
+            return
+
+        try:
+            logging.info(f"Loading model from: {folder}")
+            self.model, self.tags = load_deepdanbooru_model(folder)
+            messagebox.showinfo("Success", "Model loaded successfully!")
+            logging.info("Model loaded successfully.")
+
+        except Exception as e:
+            logging.exception("Model loading failed.")
+            messagebox.showerror("Error", f"Failed to load model:\n{e}")
+
 
 # =========================
-# Helpers
+# Start Application
 # =========================
-def hash_file(path):
-    hasher = hashlib.md5()
-    with open(path,"rb") as f:
-        hasher.update(f.read())
-    return hasher.hexdigest()
 
-def detect_with_danbooru(img):
+if __name__ == "__main__":
     try:
-        img = img.resize((512,512))
-        arr = np.array(img)
-        arr = transform_and_pad_image(arr,512)
-        arr = arr[np.newaxis,...]
-        probs = model.predict(arr)[0]
-        tags = model.tags
-        strongest, best_score = None, 0
-        for tag,prob in zip(tags,probs):
-            if tag in NSFW_TAGS and prob > DANBOORU_THRESHOLD:
-                if tag in {"sex","anal","penis","pussy"}:
-                    return tag
-                if prob>best_score:
-                    strongest, best_score = tag, prob
-        return strongest
+        root = tk.Tk()
+        app = NSFWScannerApp(root)
+        root.mainloop()
     except Exception as e:
-        log_exception(e)
-        return None
-
-def detect_with_nudenet(path):
-    try:
-        results = nudenet_detector.detect(path)
-        if results:
-            return results[0]["class"]
-        return None
-    except Exception as e:
-        log_exception(e)
-        return None
-
-def detect_gif(path):
-    try:
-        with Image.open(path) as img:
-            for frame in ImageSequence.Iterator(img):
-                frame = frame.convert("RGB")
-                tag = detect_with_danbooru(frame)
-                if tag:
-                    return tag
-        return None
-    except Exception as e:
-        log_exception(e)
-        return None
-
-def detect_image(path):
-    if path.lower().endswith(".gif"):
-        return detect_gif(path)
-    try:
-        img = Image.open(path).convert("RGB")
-        tag = detect_with_danbooru(img)
-        if tag:
-            return tag
-        return detect_with_nudenet(path)
-    except Exception as e:
-        log_exception(e)
-        return None
-
-# =========================
-# Scan folder
-# =========================
-def scan_folder(folder):
-    sfw = os.path.join(folder,"SFW")
-    nsfw = os.path.join(folder,"NSFW")
-    dup = os.path.join(folder,"DUPLICATES")
-    os.makedirs(sfw, exist_ok=True)
-    os.makedirs(nsfw, exist_ok=True)
-    os.makedirs(dup, exist_ok=True)
-
-    seen = set()
-
-    for root, _, files in os.walk(folder):
-        for file in files:
-            if not file.lower().endswith(IMAGE_EXTENSIONS):
-                continue
-            full = os.path.join(root, file)
-            if any(x in full for x in ["SFW","NSFW","DUPLICATES"]):
-                continue
-            log(f"Scanning {file}")
-            h = hash_file(full)
-            if h in seen:
-                shutil.move(full, os.path.join(dup, file))
-                log(f"Duplicate -> {file}")
-                continue
-            seen.add(h)
-            result = detect_image(full)
-            if result:
-                tag_folder = os.path.join(nsfw, result)
-                os.makedirs(tag_folder, exist_ok=True)
-                shutil.move(full, os.path.join(tag_folder, file))
-                log(f"NSFW {result} -> {file}")
-            else:
-                shutil.move(full, os.path.join(sfw, file))
-                log(f"SFW -> {file}")
-    log("Scan complete.")
-
-# =========================
-# Main
-# =========================
-if __name__=="__main__":
-    try:
-        folder = input("Folder to scan: ").strip()
-        scan_folder(folder)
-    except Exception as e:
-        log_exception(e)
-        input("Fatal crash. Check temp/log.txt")
+        logging.exception("Fatal crash.")
+        sys.exit(1)
