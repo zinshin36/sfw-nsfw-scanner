@@ -1,0 +1,52 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install git+https://github.com/KichangKim/DeepDanbooru.git
+          pip install tensorflow-cpu==2.10.1
+          pip install tensorflow-io==0.27.0
+          pip install tensorflow-io-gcs-filesystem==0.27.0
+          pip install nudenet==3.4.2
+          pip install pillow==10.2.0
+          pip install numpy==1.23.5
+          pip install pyinstaller==6.6.0
+
+      - name: Download DeepDanbooru pretrained model
+        run: |
+          curl -L -o model.zip https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip
+          tar -xf model.zip
+          mkdir model
+          move deepdanbooru-v3-20211112-sgd-e28 model\
+
+      - name: Build application
+        run: pyinstaller app.py --onedir --windowed --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet --add-data "model;model"
+
+      - name: Zip build folder
+        run: powershell Compress-Archive -Path dist/app/* -DestinationPath nsfw-scanner-windows.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Windows Build v1.0.${{ github.run_number }}
+          files: nsfw-scanner-windows.zip
