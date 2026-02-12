@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
 import tensorflow as tf
 import deepdanbooru.project as dd_project
@@ -25,11 +25,24 @@ logging.info("===== PROGRAM START =====")
 
 
 # =========================
-# DeepDanbooru Loader
+# PyInstaller Safe Path
 # =========================
 
-def load_deepdanbooru_model(project_path):
-    project = dd_project.load_project_from_path(project_path)
+def resource_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.abspath(relative_path)
+
+
+MODEL_PATH = resource_path("model/deepdanbooru-v3-20211112-sgd-e28")
+
+
+# =========================
+# Load Model Automatically
+# =========================
+
+def load_deepdanbooru_model():
+    project = dd_project.load_project_from_path(MODEL_PATH)
     model = dd_model.create_model_from_project(project)
     model.load_weights(project.weights_path)
     return model, project.tags
@@ -46,43 +59,26 @@ class NSFWScannerApp:
         self.root.title("NSFW Scanner")
         self.root.geometry("400x200")
 
-        self.model = None
-        self.tags = None
+        try:
+            logging.info("Loading DeepDanbooru model...")
+            self.model, self.tags = load_deepdanbooru_model()
+            logging.info("Model loaded successfully.")
+        except Exception as e:
+            logging.exception("Model loading failed.")
+            messagebox.showerror("Error", f"Model failed to load:\n{e}")
+            sys.exit(1)
 
         self.create_widgets()
 
     def create_widgets(self):
-
-        tk.Label(self.root, text="NSFW Scanner", font=("Arial", 16)).pack(pady=10)
-
-        tk.Button(
-            self.root,
-            text="Load DeepDanbooru Model",
-            command=self.select_model_folder,
-            width=30
-        ).pack(pady=5)
+        tk.Label(self.root, text="NSFW Scanner Ready", font=("Arial", 16)).pack(pady=30)
 
         tk.Button(
             self.root,
             text="Exit",
             command=self.root.quit,
             width=30
-        ).pack(pady=5)
-
-    def select_model_folder(self):
-        folder = filedialog.askdirectory(title="Select DeepDanbooru Project Folder")
-        if not folder:
-            return
-
-        try:
-            logging.info(f"Loading model from: {folder}")
-            self.model, self.tags = load_deepdanbooru_model(folder)
-            messagebox.showinfo("Success", "Model loaded successfully!")
-            logging.info("Model loaded successfully.")
-
-        except Exception as e:
-            logging.exception("Model loading failed.")
-            messagebox.showerror("Error", f"Failed to load model:\n{e}")
+        ).pack(pady=10)
 
 
 # =========================
@@ -94,6 +90,6 @@ if __name__ == "__main__":
         root = tk.Tk()
         app = NSFWScannerApp(root)
         root.mainloop()
-    except Exception as e:
+    except Exception:
         logging.exception("Fatal crash.")
         sys.exit(1)
