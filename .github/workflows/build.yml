@@ -27,17 +27,8 @@ jobs:
           pip install numpy==1.23.5
           pip install pyinstaller==6.6.0
 
-      - name: Patch DeepDanbooru (Windows Safe)
-        run: |
-          echo import os, site > patch.py
-          echo for sp in site.getsitepackages(): >> patch.py
-          echo     init_path = os.path.join(sp, "deepdanbooru", "__init__.py") >> patch.py
-          echo     if os.path.exists(init_path): break >> patch.py
-          echo with open(init_path, "r", encoding="utf-8") as f: content = f.read() >> patch.py
-          echo content = content.replace("import deepdanbooru.commands", "# disabled for CI build") >> patch.py
-          echo with open(init_path, "w", encoding="utf-8") as f: f.write(content) >> patch.py
-          echo print("DeepDanbooru patched successfully.") >> patch.py
-          python patch.py
+      - name: Patch DeepDanbooru
+        run: python patch_deepdanbooru.py
 
       - name: Verify Import Works
         run: python -c "import deepdanbooru; print('DeepDanbooru import OK')"
