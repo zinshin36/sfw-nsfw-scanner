@@ -23,7 +23,7 @@ jobs:
       - name: Patch DeepDanbooru
         run: python patch_deepdanbooru.py
 
-      - name: Build EXE with PyInstaller
+      - name: Build EXE
         run: >
           pyinstaller app.py --onefile --console --clean
           --additional-hooks-dir=hooks
