@@ -2,7 +2,7 @@ import os
 import sys
 import site
 
-# Find deepdanbooru __init__.py without importing
+# Locate DeepDanbooru in site-packages
 site_packages_paths = site.getsitepackages()
 found = False
 for sp in site_packages_paths:
@@ -15,7 +15,7 @@ if not found:
     print("ERROR: Could not find deepdanbooru __init__.py")
     sys.exit(1)
 
-# Comment out CLI import
+# Patch CLI import
 with open(init_path, "r", encoding="utf-8") as f:
     content = f.read()
 
