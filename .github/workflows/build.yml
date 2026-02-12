@@ -31,8 +31,8 @@ jobs:
         run: python -c "import deepdanbooru; print('DeepDanbooru import OK')"
 
       - name: Build EXE
-        run: pyinstaller app.py --onedir --console --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet
-
+        run: pyinstaller app.py --onedir --windowed --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet
+     
       - name: Upload Build Folder
         uses: actions/upload-artifact@v4
         with:
