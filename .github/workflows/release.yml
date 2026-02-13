@@ -37,20 +37,12 @@ jobs:
           Expand-Archive -Path model.zip -DestinationPath model
 
       - name: Build application
-        run: |
-          pyinstaller app.py ^
-            --onefile ^
-            --windowed ^
-            --clean ^
-            --collect-all tensorflow ^
-            --collect-all deepdanbooru ^
-            --collect-all nudenet ^
-            --add-data "model;model"
+        shell: pwsh
+        run: pyinstaller app.py --onefile --windowed --clean --collect-all tensorflow --collect-all deepdanbooru --collect-all nudenet --add-data "model;model"
 
       - name: Zip executable
         shell: pwsh
-        run: |
-          Compress-Archive -Path dist/app.exe -DestinationPath nsfw-scanner-windows.zip
+        run: Compress-Archive -Path dist/app.exe -DestinationPath nsfw-scanner-windows.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -59,6 +51,7 @@ jobs:
           path: nsfw-scanner-windows.zip
 
       - name: Create Tag
+        shell: pwsh
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
