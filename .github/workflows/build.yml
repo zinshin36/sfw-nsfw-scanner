@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.9"
 
-      - name: Clean Install Dependencies
+      - name: Install Dependencies
         shell: pwsh
         run: |
           python -m pip uninstall -y tensorflow numpy
@@ -26,7 +26,7 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
-      - name: Build EXE (ONEDIR SAFE MODE)
+      - name: Build EXE (ONEDIR)
         shell: pwsh
         run: |
           pyinstaller app.py `
@@ -35,9 +35,9 @@ jobs:
             --onedir `
             --windowed `
             --collect-all tensorflow `
+            --collect-all tensorflow_io `
             --collect-all deepdanbooru `
-            --collect-all nudenet `
-            --add-data "model;model"
+            --collect-all nudenet
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
