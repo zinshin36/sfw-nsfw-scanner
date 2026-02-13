@@ -24,7 +24,7 @@ jobs:
           pip install nudenet
 
       - name: Build EXE
-        run: pyinstaller app.py --noconfirm --clean --onedir --windowed --hidden-import tensorflow --hidden-import tensorflow_io --hidden-import deepdanbooru --hidden-import nudenet
+        run: pyinstaller app.spec
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
