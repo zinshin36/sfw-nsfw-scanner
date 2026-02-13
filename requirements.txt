@@ -1,6 +1,7 @@
-tensorflow==2.10.1
-tensorflow-io==0.27.0
-numpy==1.23.5
-deepdanbooru
-nudenet
-pillow
+python -m pip install --upgrade pip
+pip install pyinstaller==5.13.2
+pip install tensorflow-cpu==2.9.3
+pip install tensorflow-io==0.29.0
+pip install deepdanbooru
+pip install nudenet
+pip install absl-py
