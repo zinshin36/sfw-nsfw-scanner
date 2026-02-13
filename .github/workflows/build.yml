@@ -1,12 +1,7 @@
 name: Build Windows EXE
 
 on:
-  push:
-    tags:
-      - 'v*'
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
   build:
@@ -36,10 +31,3 @@ jobs:
         with:
           name: windows-build
           path: dist/app/
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/app/**
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
