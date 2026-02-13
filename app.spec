@@ -10,29 +10,27 @@ a = Analysis(
     hiddenimports=[
         'tensorflow',
         'tensorflow.python',
-        'tensorflow.python.keras',
-        'tensorflow.python.keras.engine',
-        'tensorflow_io',
         'deepdanbooru',
-        'nudenet'
+        'tensorflow_io',
+        'absl',
+        'absl.logging',
+        'absl.flags',
+        'numpy'
     ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[
+        'tensorboard',
+        'tensorflow.lite',
         'matplotlib',
         'scipy',
-        'IPython',
-        'notebook',
-        'pytest',
         'pandas',
-        'tkinter',
-        'PyQt5',
-        'PySide2'
+        'notebook',
+        'IPython'
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    noarchive=False,
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -57,5 +55,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    name='app',
+    name='app'
 )
