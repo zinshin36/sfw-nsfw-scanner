@@ -30,7 +30,7 @@ jobs:
           if (Test-Path dist) { Remove-Item dist -Recurse -Force }
 
       - name: Build EXE
-        run: pyinstaller --clean app.spec
+        run: pyinstaller --clean --onedir app.spec
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
