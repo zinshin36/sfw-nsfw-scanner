@@ -23,13 +23,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
-          pip install tensorflow-cpu
+          pip install tensorflow-cpu==2.10.1
           pip install tensorflow-io
           pip install deepdanbooru
           pip install nudenet
 
       - name: Build EXE
-        run: pyinstaller app.py --noconfirm --clean --onedir --windowed --collect-all tensorflow --collect-all tensorflow_io --collect-all deepdanbooru --collect-all nudenet
+        run: pyinstaller app.py --noconfirm --clean --onedir --windowed --hidden-import tensorflow --hidden-import tensorflow_io --hidden-import deepdanbooru --hidden-import nudenet
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
