@@ -1,0 +1,49 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies (clean install)
+        run: |
+          python -m pip uninstall -y tensorflow numpy
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build EXE (ONEDIR SAFE MODE)
+        run: |
+          pyinstaller app.py ^
+            --noconfirm ^
+            --clean ^
+            --onedir ^
+            --windowed ^
+            --collect-all tensorflow ^
+            --collect-all deepdanbooru ^
+            --collect-all nudenet ^
+            --add-data "model;model"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsfw-scanner-windows
+          path: dist/app/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/app/**
