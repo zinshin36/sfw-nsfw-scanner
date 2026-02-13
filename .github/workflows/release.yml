@@ -29,20 +29,30 @@ jobs:
           pip install nudenet==3.4.2
           pip install pyinstaller==6.6.0
 
-      - name: Download and extract DeepDanbooru model
+      - name: Download DeepDanbooru model
         shell: pwsh
         run: |
           curl -L -o model.zip https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip
           mkdir model
           Expand-Archive -Path model.zip -DestinationPath model
 
-      - name: Build application
+      - name: Build application (ONEDIR MODE)
         shell: pwsh
-        run: pyinstaller app.py --onefile --windowed --clean --collect-all tensorflow --collect-all deepdanbooru --collect-all nudenet --add-data "model;model"
+        run: |
+          pyinstaller app.py `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --collect-all tensorflow `
+            --collect-all tensorflow_io `
+            --collect-all tensorflow_io_gcs_filesystem `
+            --collect-all deepdanbooru `
+            --collect-all nudenet `
+            --add-data "model;model"
 
-      - name: Zip executable
+      - name: Zip entire dist folder
         shell: pwsh
-        run: Compress-Archive -Path dist/app.exe -DestinationPath nsfw-scanner-windows.zip
+        run: Compress-Archive -Path dist\app -DestinationPath nsfw-scanner-windows.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
