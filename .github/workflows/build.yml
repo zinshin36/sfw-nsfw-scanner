@@ -19,6 +19,7 @@ jobs:
           python-version: "3.9"
 
       - name: Clean Install Dependencies
+        shell: pwsh
         run: |
           python -m pip uninstall -y tensorflow numpy
           python -m pip install --upgrade pip
@@ -26,15 +27,16 @@ jobs:
           python -m pip install pyinstaller
 
       - name: Build EXE (ONEDIR SAFE MODE)
+        shell: pwsh
         run: |
-          pyinstaller app.py ^
-            --noconfirm ^
-            --clean ^
-            --onedir ^
-            --windowed ^
-            --collect-all tensorflow ^
-            --collect-all deepdanbooru ^
-            --collect-all nudenet ^
+          pyinstaller app.py `
+            --noconfirm `
+            --clean `
+            --onedir `
+            --windowed `
+            --collect-all tensorflow `
+            --collect-all deepdanbooru `
+            --collect-all nudenet `
             --add-data "model;model"
 
       - name: Upload Artifact
