@@ -1,4 +1,5 @@
 tensorflow==2.10.1
+tensorflow-io==0.27.0
 numpy==1.23.5
 deepdanbooru
 nudenet
