@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -37,10 +37,33 @@ jobs:
           Expand-Archive -Path model.zip -DestinationPath model
 
       - name: Build application
-        run: pyinstaller app.py --onedir --windowed --clean --collect-submodules deepdanbooru --collect-data deepdanbooru --collect-submodules nudenet --collect-data nudenet --add-data "model;model"
+        run: |
+          pyinstaller app.py ^
+            --onefile ^
+            --windowed ^
+            --clean ^
+            --collect-all tensorflow ^
+            --collect-all deepdanbooru ^
+            --collect-all nudenet ^
+            --add-data "model;model"
 
-      - name: Zip build folder
-        run: powershell Compress-Archive -Path dist/app/* -DestinationPath nsfw-scanner-windows.zip
+      - name: Zip executable
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/app.exe -DestinationPath nsfw-scanner-windows.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsfw-scanner-windows
+          path: nsfw-scanner-windows.zip
+
+      - name: Create Tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag v1.0.${{ github.run_number }}
+          git push origin v1.0.${{ github.run_number }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -48,3 +71,5 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: Windows Build v1.0.${{ github.run_number }}
           files: nsfw-scanner-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
