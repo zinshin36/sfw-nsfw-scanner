@@ -25,8 +25,8 @@ jobs:
 
       - name: Clean previous builds
         run: |
-          if exist build rmdir /s /q build
-          if exist dist rmdir /s /q dist
+         if (Test-Path build) { Remove-Item build -Recurse -Force }
+         if (Test-Path dist) { Remove-Item dist -Recurse -Force }
 
       - name: Build EXE
         run: pyinstaller --clean app.spec
