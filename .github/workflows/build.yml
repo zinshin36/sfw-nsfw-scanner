@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.9"
 
-      - name: Install dependencies (clean install)
+      - name: Clean Install Dependencies
         run: |
           python -m pip uninstall -y tensorflow numpy
           python -m pip install --upgrade pip
