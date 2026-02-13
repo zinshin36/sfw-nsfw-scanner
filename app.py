@@ -1,95 +1,83 @@
 import os
 import sys
 import logging
-import tkinter as tk
-from tkinter import messagebox
-
-import tensorflow as tf
-import deepdanbooru.project as dd_project
-import deepdanbooru.model as dd_model
-
+from pathlib import Path
 
 # =========================
-# Logging Setup
+# FORCE SAFE TENSORFLOW MODE
 # =========================
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-LOG_FILE = "app.log"
+# =========================
+# SETUP LOGGING IMMEDIATELY
+# =========================
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+LOG_FILE = BASE_DIR / "app.log"
 
 logging.basicConfig(
     filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
 )
+logger = logging.getLogger("app")
 
-logging.info("===== PROGRAM START =====")
-
-
-# =========================
-# PyInstaller Safe Path
-# =========================
-
-def resource_path(relative_path):
-    if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.abspath(relative_path)
-
-
-MODEL_PATH = resource_path("model/deepdanbooru-v3-20211112-sgd-e28")
-
+logger.info("=== APPLICATION STARTING ===")
+logger.info(f"Base directory: {BASE_DIR}")
 
 # =========================
-# Load Model Automatically
+# SAFE IMPORTS (AFTER LOG)
 # =========================
+try:
+    import tensorflow as tf
+    logger.info(f"TensorFlow version: {tf.__version__}")
+except Exception as e:
+    logger.exception("TensorFlow failed to import")
+    raise
 
-def load_deepdanbooru_model():
-    project = dd_project.load_project_from_path(MODEL_PATH)
-    model = dd_model.create_model_from_project(project)
-    model.load_weights(project.weights_path)
-    return model, project.tags
+try:
+    from deepdanbooru import DeepDanbooru
+    logger.info("DeepDanbooru imported successfully")
+except Exception as e:
+    logger.exception("DeepDanbooru failed to import")
+    raise
 
-
-# =========================
-# GUI Application
-# =========================
-
-class NSFWScannerApp:
-
-    def __init__(self, root):
-        self.root = root
-        self.root.title("NSFW Scanner")
-        self.root.geometry("400x200")
-
-        try:
-            logging.info("Loading DeepDanbooru model...")
-            self.model, self.tags = load_deepdanbooru_model()
-            logging.info("Model loaded successfully.")
-        except Exception as e:
-            logging.exception("Model loading failed.")
-            messagebox.showerror("Error", f"Model failed to load:\n{e}")
-            sys.exit(1)
-
-        self.create_widgets()
-
-    def create_widgets(self):
-        tk.Label(self.root, text="NSFW Scanner Ready", font=("Arial", 16)).pack(pady=30)
-
-        tk.Button(
-            self.root,
-            text="Exit",
-            command=self.root.quit,
-            width=30
-        ).pack(pady=10)
-
+try:
+    from nudenet import NudeClassifier
+    logger.info("NudeNet imported successfully")
+except Exception as e:
+    logger.exception("NudeNet failed to import")
+    raise
 
 # =========================
-# Start Application
+# GUI (MINIMAL TEST WINDOW)
 # =========================
+import tkinter as tk
+from tkinter import messagebox
+
+def main():
+    logger.info("Launching GUI")
+
+    root = tk.Tk()
+    root.title("NSFW Scanner")
+    root.geometry("400x200")
+
+    label = tk.Label(root, text="App started successfully", font=("Arial", 12))
+    label.pack(pady=40)
+
+    def quit_app():
+        logger.info("Application closed by user")
+        root.destroy()
+
+    button = tk.Button(root, text="Exit", command=quit_app)
+    button.pack()
+
+    root.mainloop()
 
 if __name__ == "__main__":
     try:
-        root = tk.Tk()
-        app = NSFWScannerApp(root)
-        root.mainloop()
+        main()
     except Exception:
-        logging.exception("Fatal crash.")
-        sys.exit(1)
+        logger.exception("Fatal error in main loop")
+        raise
