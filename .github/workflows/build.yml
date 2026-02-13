@@ -1,12 +1,12 @@
 name: Build Windows EXE
 
-permissions:
-  contents: write
-
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -19,18 +19,15 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: 3.9
 
-      - name: Install Dependencies
-        shell: pwsh
+      - name: Install dependencies
         run: |
-          python -m pip uninstall -y tensorflow numpy
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
+          pip install pyinstaller
+          pip install -r requirements.txt
 
-      - name: Build EXE (ONEDIR)
-        shell: pwsh
+      - name: Build EXE
         run: |
           pyinstaller app.py `
             --noconfirm `
@@ -38,17 +35,12 @@ jobs:
             --onedir `
             --windowed `
             --collect-all tensorflow `
-            --collect-all tensorflow_io `
             --collect-all deepdanbooru `
             --collect-all nudenet
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: nsfw-scanner-windows
-          path: dist/app/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/app/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
