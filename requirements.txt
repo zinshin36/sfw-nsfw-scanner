@@ -1,7 +1,6 @@
-python -m pip install --upgrade pip
-pip install pyinstaller==5.13.2
-pip install tensorflow-cpu==2.9.3
-pip install tensorflow-io==0.29.0
-pip install deepdanbooru
-pip install nudenet
-pip install absl-py
+tensorflow-cpu==2.10.1
+deepdanbooru==1.0.1
+numpy==1.23.5
+Pillow
+opencv-python-headless
+pyinstaller
