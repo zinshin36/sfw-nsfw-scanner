@@ -13,7 +13,8 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,29 +27,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Clean old builds
-        shell: cmd
         run: |
-          if exist build rmdir /s /q build
-          if exist dist rmdir /s /q dist
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
       - name: Build EXE
-        shell: cmd
-        run: |
-          pyinstaller app.py ^
-            --noconfirm ^
-            --clean ^
-            --onedir ^
-            --windowed ^
-            --hidden-import=absl ^
-            --hidden-import=tensorflow ^
-            --hidden-import=tensorflow.python ^
-            --collect-all tensorflow ^
-            --collect-all deepdanbooru ^
-            --exclude-module matplotlib ^
-            --exclude-module jupyter ^
-            --exclude-module notebook
+        run: pyinstaller app.py --noconfirm --clean --onedir --windowed --hidden-import=absl --hidden-import=tensorflow --hidden-import=tensorflow.python --collect-all tensorflow --collect-all deepdanbooru --exclude-module matplotlib --exclude-module jupyter --exclude-module notebook
 
-      - name: Create Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/app/**
