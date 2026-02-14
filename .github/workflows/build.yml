@@ -32,6 +32,7 @@ jobs:
           if exist dist rmdir /s /q dist
 
       - name: Build EXE
+        shell: cmd
         run: |
           pyinstaller app.py ^
             --noconfirm ^
