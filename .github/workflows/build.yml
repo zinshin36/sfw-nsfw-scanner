@@ -10,28 +10,33 @@ jobs:
   build:
     runs-on: windows-latest
 
+    permissions:
+      contents: read
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: "3.9"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
         shell: pwsh
 
-      - name: Clean old builds
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        shell: pwsh
+
+      - name: Clean previous builds
         run: |
           if (Test-Path build) { Remove-Item build -Recurse -Force }
           if (Test-Path dist) { Remove-Item dist -Recurse -Force }
         shell: pwsh
 
-      - name: Build EXE with PyInstaller
+      - name: Build application
         run: |
           pyinstaller app.py `
             --noconfirm `
@@ -47,6 +52,17 @@ jobs:
             --exclude-module tensorflow.tools
         shell: pwsh
 
-      - name: List dist folder
-        run: dir dist
+      - name: Verify build output
+        run: |
+          if (!(Test-Path "dist/app")) {
+            Write-Error "Build failed — dist/app not found"
+            exit 1
+          }
+          dir dist
         shell: pwsh
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/app
