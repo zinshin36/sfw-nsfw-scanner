@@ -1,83 +1,73 @@
 import os
 import sys
 import logging
-from pathlib import Path
 
 # =========================
-# FORCE SAFE TENSORFLOW MODE
+# Logging Setup
 # =========================
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-
-# =========================
-# SETUP LOGGING IMMEDIATELY
-# =========================
-BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-LOG_FILE = BASE_DIR / "app.log"
 
 logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logger = logging.getLogger("app")
 
-logger.info("=== APPLICATION STARTING ===")
-logger.info(f"Base directory: {BASE_DIR}")
+logging.info("=== APPLICATION STARTING ===")
+
+# Detect base directory (PyInstaller safe)
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+logging.info(f"Base directory: {BASE_DIR}")
 
 # =========================
-# SAFE IMPORTS (AFTER LOG)
+# TensorFlow Import
 # =========================
+
 try:
     import tensorflow as tf
-    logger.info(f"TensorFlow version: {tf.__version__}")
+    logging.info(f"TensorFlow version: {tf.__version__}")
 except Exception as e:
-    logger.exception("TensorFlow failed to import")
-    raise
-
-try:
-    from deepdanbooru import DeepDanbooru
-    logger.info("DeepDanbooru imported successfully")
-except Exception as e:
-    logger.exception("DeepDanbooru failed to import")
-    raise
-
-try:
-    from nudenet import NudeClassifier
-    logger.info("NudeNet imported successfully")
-except Exception as e:
-    logger.exception("NudeNet failed to import")
-    raise
+    logging.exception("TensorFlow failed to import")
+    sys.exit(1)
 
 # =========================
-# GUI (MINIMAL TEST WINDOW)
+# DeepDanbooru Import
 # =========================
-import tkinter as tk
-from tkinter import messagebox
+
+try:
+    import deepdanbooru
+    logging.info("DeepDanbooru imported successfully")
+except Exception as e:
+    logging.exception("DeepDanbooru failed to import")
+    sys.exit(1)
+
+# =========================
+# Basic DeepDanbooru Model Load
+# =========================
+
+try:
+    model = deepdanbooru.project.load_model_from_project(
+        os.path.join(BASE_DIR, "model")
+    )
+    logging.info("DeepDanbooru model loaded successfully")
+except Exception as e:
+    logging.warning("Model not loaded (check if model folder exists)")
+    model = None
+
+# =========================
+# Simple Test Run
+# =========================
 
 def main():
-    logger.info("Launching GUI")
+    logging.info("Application is running.")
 
-    root = tk.Tk()
-    root.title("NSFW Scanner")
-    root.geometry("400x200")
+    if model is None:
+        logging.info("No model available. Exiting.")
+        return
 
-    label = tk.Label(root, text="App started successfully", font=("Arial", 12))
-    label.pack(pady=40)
-
-    def quit_app():
-        logger.info("Application closed by user")
-        root.destroy()
-
-    button = tk.Button(root, text="Exit", command=quit_app)
-    button.pack()
-
-    root.mainloop()
+    logging.info("Model ready.")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        logger.exception("Fatal error in main loop")
-        raise
+    main()
