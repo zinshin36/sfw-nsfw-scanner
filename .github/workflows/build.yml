@@ -1,21 +1,52 @@
-- name: Clean old builds
-  run: |
-    if (Test-Path build) { Remove-Item build -Recurse -Force }
-    if (Test-Path dist) { Remove-Item dist -Recurse -Force }
-  shell: pwsh
+name: Build Windows EXE
 
-- name: Build EXE
-  run: |
-    pyinstaller app.py `
-      --noconfirm `
-      --clean `
-      --onedir `
-      --windowed `
-      --exclude-module matplotlib `
-      --exclude-module jupyter `
-      --exclude-module notebook `
-      --exclude-module tensorflow.include `
-      --exclude-module tensorflow.compiler `
-      --exclude-module tensorflow.lite `
-      --exclude-module tensorflow.tools
-  shell: pwsh
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        shell: pwsh
+
+      - name: Clean old builds
+        run: |
+          if (Test-Path build) { Remove-Item build -Recurse -Force }
+          if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+        shell: pwsh
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller app.py `
+            --noconfirm `
+            --clean `
+            --onedir `
+            --windowed `
+            --exclude-module matplotlib `
+            --exclude-module jupyter `
+            --exclude-module notebook `
+            --exclude-module tensorflow.include `
+            --exclude-module tensorflow.compiler `
+            --exclude-module tensorflow.lite `
+            --exclude-module tensorflow.tools
+        shell: pwsh
+
+      - name: List dist folder
+        run: dir dist
+        shell: pwsh
