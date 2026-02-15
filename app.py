@@ -1,54 +1,56 @@
 import os
 import sys
+import tkinter as tk
+from tkinter import messagebox
 import logging
-import traceback
 
 # =========================
-# Logging Setup
+# Safe Base Path
 # =========================
 
-LOG_FILE = "app_debug.log"
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# =========================
+# Logging (File Only)
+# =========================
+
+LOG_FILE = os.path.join(BASE_DIR, "app.log")
 
 logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout)
-    ]
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-logging.info("=== APPLICATION STARTING ===")
+logging.info("Application starting...")
+
+# =========================
+# Import ML Libraries
+# =========================
 
 try:
-    # Detect base directory (PyInstaller safe)
-    if getattr(sys, 'frozen', False):
-        BASE_DIR = os.path.dirname(sys.executable)
-    else:
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-    logging.info(f"Base directory: {BASE_DIR}")
-
-    # =========================
-    # TensorFlow Import
-    # =========================
-
     import tensorflow as tf
-    logging.info(f"TensorFlow version: {tf.__version__}")
-
-    # =========================
-    # DeepDanbooru Import
-    # =========================
-
     import deepdanbooru
-    logging.info("DeepDanbooru imported successfully")
-
-    logging.info("Application is running correctly.")
-
+    logging.info("TensorFlow and DeepDanbooru loaded successfully.")
 except Exception as e:
-    logging.error("FATAL ERROR OCCURRED")
-    logging.error(traceback.format_exc())
-    input("Press ENTER to exit...")
-    sys.exit(1)
+    logging.exception("Failed loading ML libraries")
+    raise
 
-input("Press ENTER to exit...")
+# =========================
+# GUI
+# =========================
+
+root = tk.Tk()
+root.title("SFW / NSFW Sorter")
+root.geometry("400x200")
+
+label = tk.Label(root, text="DeepDanbooru Loaded Successfully")
+label.pack(pady=40)
+
+btn = tk.Button(root, text="Exit", command=root.destroy)
+btn.pack()
+
+root.mainloop()
