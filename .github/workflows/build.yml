@@ -45,11 +45,7 @@ jobs:
             --windowed `
             --exclude-module matplotlib `
             --exclude-module jupyter `
-            --exclude-module notebook `
-            --exclude-module tensorflow.include `
-            --exclude-module tensorflow.compiler `
-            --exclude-module tensorflow.lite `
-            --exclude-module tensorflow.tools
+            --exclude-module notebook
         shell: pwsh
 
       - name: Verify build output
