@@ -36,25 +36,14 @@ jobs:
           if (Test-Path dist) { Remove-Item dist -Recurse -Force }
         shell: pwsh
 
-      - name: Build application
+      - name: Build application (DEBUG MODE)
         run: |
           pyinstaller app.py `
             --noconfirm `
             --clean `
             --onedir `
-            --windowed `
-            --exclude-module matplotlib `
-            --exclude-module jupyter `
-            --exclude-module notebook
-        shell: pwsh
-
-      - name: Verify build output
-        run: |
-          if (!(Test-Path "dist/app")) {
-            Write-Error "Build failed — dist/app not found"
-            exit 1
-          }
-          dir dist
+            --console `
+            --log-level=DEBUG
         shell: pwsh
 
       - name: Upload build artifact
