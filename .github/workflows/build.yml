@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows GUI EXE
 
 on:
   push:
@@ -10,15 +10,10 @@ jobs:
   build:
     runs-on: windows-latest
 
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
@@ -36,17 +31,16 @@ jobs:
           if (Test-Path dist) { Remove-Item dist -Recurse -Force }
         shell: pwsh
 
-      - name: Build application (DEBUG MODE)
+      - name: Build GUI EXE
         run: |
           pyinstaller app.py `
             --noconfirm `
             --clean `
             --onedir `
-            --console `
-            --log-level=DEBUG
+            --windowed
         shell: pwsh
 
-      - name: Upload build artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
