@@ -37,7 +37,10 @@ jobs:
             --noconfirm `
             --clean `
             --onedir `
-            --windowed
+            --windowed `
+            --collect-binaries numpy `
+            --collect-binaries tensorflow `
+            --collect-submodules deepdanbooru
         shell: pwsh
 
       - name: Upload artifact
