@@ -1,42 +1,21 @@
-name: Build Windows EXE
+- name: Clean old builds
+  run: |
+    if (Test-Path build) { Remove-Item build -Recurse -Force }
+    if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+  shell: pwsh
 
-on:
-  push:
-    tags:
-      - "v*"
-
-jobs:
-  build:
-    runs-on: windows-latest
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Clean old builds
-        run: |
-          if (Test-Path build) { Remove-Item -Recurse -Force build }
-          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-
-      - name: Build EXE
-        run: pyinstaller app.py --noconfirm --clean --onedir --windowed --hidden-import=absl --hidden-import=tensorflow --hidden-import=tensorflow.python --collect-all tensorflow --collect-all deepdanbooru --exclude-module matplotlib --exclude-module jupyter --exclude-module notebook
-
-      - name: Upload Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/app/**
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+- name: Build EXE
+  run: |
+    pyinstaller app.py `
+      --noconfirm `
+      --clean `
+      --onedir `
+      --windowed `
+      --exclude-module matplotlib `
+      --exclude-module jupyter `
+      --exclude-module notebook `
+      --exclude-module tensorflow.include `
+      --exclude-module tensorflow.compiler `
+      --exclude-module tensorflow.lite `
+      --exclude-module tensorflow.tools
+  shell: pwsh
