@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
 from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
@@ -11,7 +12,7 @@ deepdanbooru_datas, deepdanbooru_binaries, deepdanbooru_hidden = collect_all("de
 
 a = Analysis(
     ["app.py"],
-    pathex=[],
+    pathex=[sys.base_prefix],
     binaries=(
         numpy_binaries
         + tensorflow_binaries
@@ -50,3 +51,4 @@ exe = EXE(
     upx=False,
     console=False,
 )
+
