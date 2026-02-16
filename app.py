@@ -39,19 +39,32 @@ logging.basicConfig(
 logging.info("Application starting...")
 logging.info(f"Base directory: {BASE_DIR}")
 
-# -------------------------------------------------
+ -------------------------------------------------
 # SAFE ML IMPORT
 # -------------------------------------------------
 
 try:
     import numpy as np
-    import tensorflow as tf
-    import deepdanbooru as ddb
-
-    logging.info("ML libraries loaded successfully")
-except Exception:
-    logging.exception("Failed loading ML libraries")
+    logging.info("Numpy loaded successfully")
+except ImportError as e:
+    logging.exception("Failed loading Numpy: %s", e)
     sys.exit(1)
+
+try:
+    import tensorflow as tf
+    logging.info("TensorFlow loaded successfully")
+except ImportError as e:
+    logging.exception("Failed loading TensorFlow: %s", e)
+    sys.exit(1)
+
+try:
+    import deepdanbooru as ddb
+    logging.info("DeepDanbooru loaded successfully")
+except ImportError as e:
+    logging.exception("Failed loading DeepDanbooru: %s", e)
+    sys.exit(1)
+
+logging.info("ML libraries loaded successfully")
 
 # -------------------------------------------------
 # SIMPLE GUI TEST WINDOW
