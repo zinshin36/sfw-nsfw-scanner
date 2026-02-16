@@ -42,21 +42,12 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=True,
+    exclude_binaries=False,
     name="app",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,   # no console window
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    name="app",
-)
