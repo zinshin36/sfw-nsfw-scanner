@@ -1,4 +1,4 @@
-name: Build Windows OneFile EXE (Python 3.10.11)
+name: Build Windows EXE (ONEDIR - Python 3.10.11)
 
 on:
   push:
@@ -32,12 +32,11 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller==6.6.0
 
-      - name: Build EXE
-        run: |
-          pyinstaller --clean --noconfirm app.spec
+      - name: Build ONEDIR EXE
+        run: pyinstaller --clean --noconfirm app.spec
 
-      - name: Upload EXE
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist/app.exe
+          path: dist/sfw_nsfw_sorter/
