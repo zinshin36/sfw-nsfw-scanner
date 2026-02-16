@@ -4,12 +4,10 @@ from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 
-
-# --- Collect everything properly ---
+# Collect all required package files
 numpy_datas, numpy_binaries, numpy_hidden = collect_all("numpy")
 tensorflow_datas, tensorflow_binaries, tensorflow_hidden = collect_all("tensorflow")
 deepdanbooru_datas, deepdanbooru_binaries, deepdanbooru_hidden = collect_all("deepdanbooru")
-
 
 a = Analysis(
     ["app.py"],
@@ -17,15 +15,13 @@ a = Analysis(
     binaries=numpy_binaries + tensorflow_binaries + deepdanbooru_binaries,
     datas=numpy_datas + tensorflow_datas + deepdanbooru_datas,
     hiddenimports=numpy_hidden + tensorflow_hidden + deepdanbooru_hidden,
-    hookspath=["hooks"],
+    hookspath=[],
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
+    noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
@@ -37,7 +33,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,
+    console=True,  # KEEP TRUE for debugging first
 )
 
 coll = COLLECT(
