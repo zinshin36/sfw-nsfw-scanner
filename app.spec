@@ -1,21 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-import os
 from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
 
 block_cipher = None
 
 numpy_binaries = collect_dynamic_libs("numpy")
 tensorflow_binaries = collect_dynamic_libs("tensorflow")
+deepdanbooru_binaries = collect_dynamic_libs("deepdanbooru")
 
-deepdanbooru_hidden = collect_submodules("deepdanbooru")
+hidden_imports = (
+    collect_submodules("deepdanbooru")
+    + collect_submodules("tensorflow")
+)
 
 a = Analysis(
     ["app.py"],
     pathex=[],
-    binaries=numpy_binaries + tensorflow_binaries,
+    binaries=numpy_binaries + tensorflow_binaries + deepdanbooru_binaries,
     datas=[],
-    hiddenimports=deepdanbooru_hidden,
+    hiddenimports=hidden_imports,
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
