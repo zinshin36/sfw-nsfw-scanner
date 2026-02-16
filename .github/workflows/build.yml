@@ -31,14 +31,11 @@ jobs:
             -Uri "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" `
             -OutFile "model.zip"
 
-          Expand-Archive -Path model.zip -DestinationPath extracted
+          New-Item -ItemType Directory -Path model
 
-          $folder = Get-ChildItem extracted | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-
-          Rename-Item $folder.FullName model
+          Expand-Archive -Path model.zip -DestinationPath model -Force
 
           Remove-Item model.zip
-          Remove-Item extracted -Recurse -Force
 
       - name: Install PyInstaller
         run: pip install pyinstaller==6.6.0
