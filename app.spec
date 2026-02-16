@@ -24,6 +24,7 @@ a = Analysis(
         + tensorflow_datas
         + scipy_datas
         + deepdanbooru_datas
+        + [("model", "model")]
     ),
     hiddenimports=(
         numpy_hidden
@@ -31,10 +32,7 @@ a = Analysis(
         + scipy_hidden
         + deepdanbooru_hidden
     ),
-    hookspath=[],
-    runtime_hooks=[],
     excludes=["tensorflow_io"],
-    noarchive=False,
 )
 
 pyz = PYZ(a.pure)
@@ -43,12 +41,7 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=False,
     name="sfw_nsfw_sorter",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
     console=False,
 )
 
@@ -57,7 +50,5 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=False,
-    upx=False,
     name="sfw_nsfw_sorter"
 )
