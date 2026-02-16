@@ -2,16 +2,15 @@ import os
 import sys
 import logging
 import threading
-import queue
+import hashlib
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-# Prevent tensorflow_io native loading issues
 import types
 sys.modules["tensorflow_io"] = types.ModuleType("tensorflow_io")
 
-# Setup logging
 LOG_FILE = os.path.join(os.getcwd(), "app.log")
+
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -20,120 +19,156 @@ logging.basicConfig(
 
 logging.info("Application starting...")
 
-# Load ML Libraries
-try:
-    import numpy as np
-    logging.info("NumPy loaded successfully")
-except Exception as e:
-    logging.exception("Failed loading NumPy")
-    raise
+import numpy as np
+import tensorflow as tf
+import deepdanbooru
 
-try:
-    import tensorflow as tf
-    logging.info("TensorFlow loaded successfully")
-except Exception as e:
-    logging.exception("Failed loading TensorFlow")
-    raise
+logging.info("Libraries loaded")
 
-try:
-    import deepdanbooru
-    logging.info("DeepDanbooru loaded successfully")
-except Exception as e:
-    logging.exception("Failed loading DeepDanbooru")
-    raise
-
-logging.info("ML libraries loaded successfully")
-
-# Load model
 MODEL = None
+MODEL_WIDTH = 512
+MODEL_HEIGHT = 512
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource (works for PyInstaller)."""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 
 def load_model():
     global MODEL
     try:
-        model_path = os.path.join(getattr(sys, "_MEIPASS", os.path.abspath(".")), "model")
+        model_path = resource_path("model")
+
+        project_file = os.path.join(model_path, "project.json")
+
+        if not os.path.exists(project_file):
+            raise FileNotFoundError(project_file)
+
         MODEL = deepdanbooru.project.load_model_from_project(model_path)
         logging.info("Model loaded successfully")
-    except Exception as e:
-        logging.exception("Failed loading model")
+
+    except Exception:
+        logging.exception("Model failed to load")
         MODEL = None
+
 
 load_model()
 
-# Sorting thread logic
-task_queue = queue.Queue()
+
+def file_hash(path):
+    hasher = hashlib.md5()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 stop_event = threading.Event()
 
-def process_queue(folder, progress_callback, list_callback):
-    try:
-        images = [
-            f for f in os.listdir(folder)
-            if os.path.isfile(os.path.join(folder, f))
-        ]
-        total = len(images)
-        for i, fname in enumerate(images):
-            if stop_event.is_set():
-                break
 
-            path = os.path.join(folder, fname)
-            list_callback(fname)
+def process_folder(folder, progress_callback, list_callback):
 
-            try:
-                image = deepdanbooru.data.load_image_for_evaluate(path)
-                result = deepdanbooru.project.predict_tags(MODEL, image)
-                score = result.get("rating:explicit", 0)
+    if MODEL is None:
+        messagebox.showerror("Error", "Model not loaded. Ensure model folder exists.")
+        return
 
-                dest = "nsfw" if score > 0.5 else "sfw"
-                target_folder = os.path.join(folder, dest)
-                os.makedirs(target_folder, exist_ok=True)
-                os.rename(path, os.path.join(target_folder, fname))
+    sfw_dir = os.path.join(folder, "sfw")
+    nsfw_dir = os.path.join(folder, "nsfw")
+    dup_dir = os.path.join(folder, "duplicates")
 
-            except Exception:
-                logging.exception("Failed processing %s", fname)
+    os.makedirs(sfw_dir, exist_ok=True)
+    os.makedirs(nsfw_dir, exist_ok=True)
+    os.makedirs(dup_dir, exist_ok=True)
 
-            progress_callback(i + 1, total)
+    hashes = set()
 
-    except Exception:
-        logging.exception("Sorting thread failed")
+    files = [
+        f for f in os.listdir(folder)
+        if os.path.isfile(os.path.join(folder, f))
+        and f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    ]
 
-# GUI
+    total = len(files)
+
+    for index, fname in enumerate(files):
+        if stop_event.is_set():
+            break
+
+        path = os.path.join(folder, fname)
+        list_callback(fname)
+
+        try:
+            h = file_hash(path)
+
+            if h in hashes:
+                os.rename(path, os.path.join(dup_dir, fname))
+                progress_callback(index + 1, total)
+                continue
+
+            hashes.add(h)
+
+            image = deepdanbooru.data.load_image_for_evaluate(
+                path,
+                MODEL_WIDTH,
+                MODEL_HEIGHT
+            )
+
+            result = deepdanbooru.project.predict_tags(MODEL, image)
+            explicit_score = result.get("rating:explicit", 0)
+
+            if explicit_score > 0.5:
+                os.rename(path, os.path.join(nsfw_dir, fname))
+            else:
+                os.rename(path, os.path.join(sfw_dir, fname))
+
+        except Exception:
+            logging.exception("Failed processing %s", fname)
+
+        progress_callback(index + 1, total)
+
+
 class App:
+
     def __init__(self, root):
         self.root = root
-        self.root.title("SFW/NSFW Sorter")
-        self.root.geometry("600x400")
+        self.root.title("SFW / NSFW Sorter")
+        self.root.geometry("650x450")
 
-        self.folder_path = tk.StringVar()
+        self.folder = tk.StringVar()
 
-        frame = tk.Frame(root)
-        frame.pack(pady=10, padx=10, fill="x")
+        top = tk.Frame(root)
+        top.pack(pady=10)
 
-        tk.Label(frame, text="Folder:").pack(side="left")
-        self.entry = tk.Entry(frame, textvariable=self.folder_path, width=40)
-        self.entry.pack(side="left", padx=5)
+        tk.Entry(top, textvariable=self.folder, width=50).pack(side="left")
+        tk.Button(top, text="Browse", command=self.browse).pack(side="left", padx=5)
 
-        tk.Button(frame, text="Browse", command=self.browse).pack(side="left")
-
-        self.start_btn = tk.Button(root, text="Start Sorting", command=self.start_sort)
+        self.start_btn = tk.Button(root, text="Start", command=self.start)
         self.start_btn.pack(pady=5)
 
-        self.cancel_btn = tk.Button(root, text="Cancel", command=self.cancel_sort, state="disabled")
+        self.cancel_btn = tk.Button(root, text="Cancel", command=self.cancel, state="disabled")
         self.cancel_btn.pack(pady=5)
 
-        self.progress = ttk.Progressbar(root, orient="horizontal", length=500, mode="determinate")
+        self.progress = ttk.Progressbar(root, length=600)
         self.progress.pack(pady=10)
 
-        self.listbox = tk.Listbox(root, width=80, height=10)
+        self.listbox = tk.Listbox(root, width=90, height=15)
         self.listbox.pack(pady=10)
 
     def browse(self):
         folder = filedialog.askdirectory()
         if folder:
-            self.folder_path.set(folder)
+            self.folder.set(folder)
 
-    def start_sort(self):
-        folder = self.folder_path.get()
+    def start(self):
+        folder = self.folder.get()
         if not folder:
-            messagebox.showerror("Error", "Select a folder first")
+            messagebox.showerror("Error", "Select a folder first.")
             return
 
         self.start_btn.config(state="disabled")
@@ -149,30 +184,28 @@ class App:
         ).start()
 
     def run_sort(self, folder):
-        def progress_cb(completed, total):
+        def progress_cb(done, total):
             self.progress["maximum"] = total
-            self.progress["value"] = completed
+            self.progress["value"] = done
 
         def list_cb(fname):
             self.listbox.insert(tk.END, fname)
             self.listbox.yview(tk.END)
 
-        process_queue(folder, progress_cb, list_cb)
-        self.finish_sort()
+        process_folder(folder, progress_cb, list_cb)
 
-    def cancel_sort(self):
-        stop_event.set()
-        self.finish_sort("Sorting cancelled")
-
-    def finish_sort(self, msg=None):
         self.start_btn.config(state="normal")
         self.cancel_btn.config(state="disabled")
+        messagebox.showinfo("Done", "Sorting completed.")
 
-        if msg:
-            messagebox.showinfo("Info", msg)
-        else:
-            messagebox.showinfo("Info", "Sorting completed")
+    def cancel(self):
+        stop_event.set()
+        self.start_btn.config(state="normal")
+        self.cancel_btn.config(state="disabled")
+        messagebox.showinfo("Stopped", "Sorting cancelled.")
 
-root = tk.Tk()
-app = App(root)
-root.mainloop()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
