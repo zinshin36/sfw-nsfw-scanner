@@ -45,6 +45,9 @@ logging.info(f"Base directory: {BASE_DIR}")
 # SAFE ML IMPORT
 # -------------------------------------------------
 
+import logging
+import sys
+
 try:
     import numpy as np
     logging.info("Numpy loaded successfully")
