@@ -25,22 +25,18 @@ jobs:
         run: pip install -r requirements.txt
         shell: pwsh
 
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+        shell: pwsh
+
       - name: Clean previous builds
         run: |
           if (Test-Path build) { Remove-Item build -Recurse -Force }
           if (Test-Path dist) { Remove-Item dist -Recurse -Force }
         shell: pwsh
 
-      - name: Build GUI EXE
-        run: |
-          pyinstaller app.py `
-            --noconfirm `
-            --clean `
-            --onedir `
-            --windowed `
-            --collect-binaries numpy `
-            --collect-binaries tensorflow `
-            --collect-submodules deepdanbooru
+      - name: Build with spec file
+        run: pyinstaller app.spec
         shell: pwsh
 
       - name: Upload artifact
