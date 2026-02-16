@@ -7,6 +7,7 @@ block_cipher = None
 numpy_datas, numpy_binaries, numpy_hidden = collect_all("numpy")
 tensorflow_datas, tensorflow_binaries, tensorflow_hidden = collect_all("tensorflow")
 tfio_datas, tfio_binaries, tfio_hidden = collect_all("tensorflow_io")
+scipy_datas, scipy_binaries, scipy_hidden = collect_all("scipy")
 deepdanbooru_datas, deepdanbooru_binaries, deepdanbooru_hidden = collect_all("deepdanbooru")
 
 a = Analysis(
@@ -16,18 +17,21 @@ a = Analysis(
         numpy_binaries
         + tensorflow_binaries
         + tfio_binaries
+        + scipy_binaries
         + deepdanbooru_binaries
     ),
     datas=(
         numpy_datas
         + tensorflow_datas
         + tfio_datas
+        + scipy_datas
         + deepdanbooru_datas
     ),
     hiddenimports=(
         numpy_hidden
         + tensorflow_hidden
         + tfio_hidden
+        + scipy_hidden
         + deepdanbooru_hidden
     ),
     hookspath=[],
