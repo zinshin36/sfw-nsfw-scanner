@@ -26,12 +26,9 @@ import deepdanbooru
 logging.info("Libraries loaded")
 
 MODEL = None
-MODEL_WIDTH = 512
-MODEL_HEIGHT = 512
 
 
 def resource_path(relative_path):
-    """Get absolute path to resource (works for PyInstaller)."""
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
@@ -41,15 +38,8 @@ def load_model():
     global MODEL
     try:
         model_path = resource_path("model")
-
-        project_file = os.path.join(model_path, "project.json")
-
-        if not os.path.exists(project_file):
-            raise FileNotFoundError(project_file)
-
         MODEL = deepdanbooru.project.load_model_from_project(model_path)
         logging.info("Model loaded successfully")
-
     except Exception:
         logging.exception("Model failed to load")
         MODEL = None
@@ -75,7 +65,7 @@ stop_event = threading.Event()
 def process_folder(folder, progress_callback, list_callback):
 
     if MODEL is None:
-        messagebox.showerror("Error", "Model not loaded. Ensure model folder exists.")
+        messagebox.showerror("Error", "Model not loaded.")
         return
 
     sfw_dir = os.path.join(folder, "sfw")
@@ -97,6 +87,7 @@ def process_folder(folder, progress_callback, list_callback):
     total = len(files)
 
     for index, fname in enumerate(files):
+
         if stop_event.is_set():
             break
 
@@ -113,13 +104,9 @@ def process_folder(folder, progress_callback, list_callback):
 
             hashes.add(h)
 
-            image = deepdanbooru.data.load_image_for_evaluate(
-                path,
-                MODEL_WIDTH,
-                MODEL_HEIGHT
-            )
-
+            image = deepdanbooru.data.load_image_for_evaluate(path, 512, 512)
             result = deepdanbooru.project.predict_tags(MODEL, image)
+
             explicit_score = result.get("rating:explicit", 0)
 
             if explicit_score > 0.5:
