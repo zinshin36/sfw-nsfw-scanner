@@ -19,7 +19,7 @@ jobs:
         python-version: '3.10.11'
         architecture: 'x64'
 
-    - name: Verify Python version
+    - name: Verify Python
       run: python --version
 
     - name: Upgrade pip
@@ -31,6 +31,7 @@ jobs:
     - name: Verify installed packages
       run: |
         python -c "import tensorflow as tf; print('TensorFlow:', tf.__version__)"
+        python -c "import tensorflow_io; print('TF-IO OK')"
         python -c "import numpy as np; print('NumPy:', np.__version__)"
         python -c "import deepdanbooru; print('DeepDanbooru OK')"
 
