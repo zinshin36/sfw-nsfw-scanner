@@ -95,21 +95,29 @@ def process_folder(folder, progress_callback, list_callback):
         list_callback(fname)
 
         try:
+            # Duplicate detection
             h = file_hash(path)
-
             if h in hashes:
                 os.rename(path, os.path.join(dup_dir, fname))
                 progress_callback(index + 1, total)
                 continue
-
             hashes.add(h)
 
+            # Load image correctly
             image = deepdanbooru.data.load_image_for_evaluate(path, 512, 512)
-            result = deepdanbooru.project.predict_tags(MODEL, image)
+            image = np.expand_dims(image, 0)
 
-            explicit_score = result.get("rating:explicit", 0)
+            # Predict
+            predictions = MODEL.predict(image)[0]
 
-            if explicit_score > 0.5:
+            # Map tags
+            tag_dict = dict(zip(MODEL.tags, predictions))
+
+            explicit_score = tag_dict.get("rating:explicit", 0.0)
+            safe_score = tag_dict.get("rating:safe", 0.0)
+
+            # Decide classification
+            if explicit_score > safe_score:
                 os.rename(path, os.path.join(nsfw_dir, fname))
             else:
                 os.rename(path, os.path.join(sfw_dir, fname))
