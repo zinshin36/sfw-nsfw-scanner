@@ -1,56 +1,66 @@
 import os
 import sys
-import tkinter as tk
-from tkinter import messagebox
 import logging
 
-# =========================
-# Safe Base Path
-# =========================
+# -------------------------------------------------
+# FORCE DLL PATH FIX FOR PYINSTALLER + NUMPY
+# -------------------------------------------------
 
 if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(sys.executable)
+    base_dir = sys._MEIPASS
 else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.abspath(__file__))
 
-# =========================
-# Logging (File Only)
-# =========================
+os.environ["PATH"] = base_dir + os.pathsep + os.environ.get("PATH", "")
 
-LOG_FILE = os.path.join(BASE_DIR, "app.log")
+# On Python 3.8+ this is required for DLL loading
+if hasattr(os, "add_dll_directory"):
+    os.add_dll_directory(base_dir)
+
+# -------------------------------------------------
+# Logging
+# -------------------------------------------------
 
 logging.basicConfig(
-    filename=LOG_FILE,
+    filename="app_debug.log",
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
 logging.info("Application starting...")
+logging.info(f"Base directory: {base_dir}")
 
-# =========================
+# -------------------------------------------------
 # Import ML Libraries
-# =========================
+# -------------------------------------------------
 
 try:
+    import numpy as np
     import tensorflow as tf
-    import deepdanbooru
-    logging.info("TensorFlow and DeepDanbooru loaded successfully.")
-except Exception as e:
+    import deepdanbooru as ddb
+    logging.info("ML libraries loaded successfully")
+except Exception:
     logging.exception("Failed loading ML libraries")
-    raise
+    sys.exit(1)
 
-# =========================
+# -------------------------------------------------
 # GUI
-# =========================
+# -------------------------------------------------
 
-root = tk.Tk()
-root.title("SFW / NSFW Sorter")
-root.geometry("400x200")
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
-label = tk.Label(root, text="DeepDanbooru Loaded Successfully")
-label.pack(pady=40)
 
-btn = tk.Button(root, text="Exit", command=root.destroy)
-btn.pack()
+def main():
+    root = tk.Tk()
+    root.title("SFW / NSFW Sorter")
+    root.geometry("500x300")
 
-root.mainloop()
+    label = tk.Label(root, text="Application Loaded Successfully", font=("Arial", 14))
+    label.pack(pady=40)
+
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
