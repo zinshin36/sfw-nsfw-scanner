@@ -30,8 +30,10 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 # Logging
 # -------------------------------------------------
 
+log_file_path = os.path.join(BASE_DIR, "app_debug.log")
+
 logging.basicConfig(
-    filename="app_debug.log",
+    filename=log_file_path,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
