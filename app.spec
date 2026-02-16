@@ -44,7 +44,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=False,
-    name="app",
+    name="sfw_nsfw_sorter",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -52,3 +52,12 @@ exe = EXE(
     console=False,
 )
 
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="sfw_nsfw_sorter"
+)
