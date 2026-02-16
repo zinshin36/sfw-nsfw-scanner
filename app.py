@@ -30,6 +30,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 # Logging
 # -------------------------------------------------
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # Ensure BASE_DIR is defined
 log_file_path = os.path.join(BASE_DIR, "app_debug.log")
 
 logging.basicConfig(
