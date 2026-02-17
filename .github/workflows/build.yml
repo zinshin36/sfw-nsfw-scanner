@@ -27,6 +27,13 @@ jobs:
     - name: Build EXE
       run: pyinstaller app.spec
 
+    - name: Verify dist folder
+      run: |
+        echo "Listing dist directory..."
+        dir dist
+        echo "Listing dist/sfw_nsfw_sorter directory..."
+        dir dist\sfw_nsfw_sorter
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
