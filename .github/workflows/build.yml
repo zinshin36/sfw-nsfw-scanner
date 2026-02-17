@@ -30,13 +30,18 @@ jobs:
       run: pyinstaller app.spec
 
     - name: Show entire project tree
+      shell: pwsh
       run: |
-        echo "==== ROOT ===="
-        dir
-        echo "==== DIST ===="
-        dir dist
-        echo "==== DIST RECURSIVE ===="
-        dir dist /s
+        Write-Host "==== ROOT ===="
+        Get-ChildItem -Path .
+        Write-Host "==== DIST ===="
+        if (Test-Path dist) {
+          Get-ChildItem -Path dist
+          Write-Host "==== DIST RECURSIVE ===="
+          Get-ChildItem -Path dist -Recurse
+        } else {
+          Write-Host "DIST FOLDER DOES NOT EXIST"
+        }
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
