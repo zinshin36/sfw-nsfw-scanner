@@ -1,46 +1,42 @@
 import os
 import sys
+import hashlib
 import logging
 import threading
-import hashlib
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog, ttk
 
-from PIL import Image
 import numpy as np
-import tensorflow as tf
-import deepdanbooru
+from PIL import Image
 import cv2
 
+import tensorflow as tf
+import deepdanbooru
+
+
+# -------------------- GLOBALS --------------------
 
 MODEL = None
 TAGS = []
 THRESHOLD = 0.30
 LOG_FILE = None
+stop_event = threading.Event()
 
+
+# -------------------- MODEL LOADING --------------------
 
 def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
-
-
-def start_new_log():
-    global LOG_FILE
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    LOG_FILE = f"sort_log_{timestamp}.txt"
-    logging.basicConfig(
-        filename=LOG_FILE,
-        level=logging.INFO,
-        format="%(message)s",
-        force=True
-    )
+    return os.path.abspath(relative_path)
 
 
 def load_model():
     global MODEL, TAGS
+
     model_path = resource_path("model")
+
     MODEL = deepdanbooru.project.load_model_from_project(model_path)
     MODEL.compile()
 
@@ -51,12 +47,41 @@ def load_model():
 load_model()
 
 
+# -------------------- LOGGING --------------------
+
+def start_new_log():
+    global LOG_FILE
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    LOG_FILE = f"sort_log_{timestamp}.txt"
+
+    logging.basicConfig(
+        filename=LOG_FILE,
+        level=logging.INFO,
+        format="%(message)s",
+        force=True
+    )
+
+
+# -------------------- DUPLICATE HASH --------------------
+
+def file_hash(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# -------------------- PREPROCESS --------------------
+
 def preprocess_frame(frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame = cv2.resize(frame, (512, 512))
     frame = frame.astype(np.float32) / 255.0
     return np.expand_dims(frame, 0)
 
+
+# -------------------- TAG ANALYSIS --------------------
 
 def analyze_tags(preds):
 
@@ -120,129 +145,178 @@ def analyze_tags(preds):
     }
 
 
-def classify_image_array(img_array):
-    preds = MODEL.predict(img_array, verbose=0)[0]
-    return analyze_tags(preds)
+# -------------------- CLASSIFIERS --------------------
 
-
-def process_file(path):
-
+def classify_image(path):
     img = Image.open(path).convert("RGB")
     img = img.resize((512, 512))
     img = np.array(img).astype(np.float32) / 255.0
     img = np.expand_dims(img, 0)
-
-    return classify_image_array(img)
-
-
-stop_event = threading.Event()
+    preds = MODEL.predict(img, verbose=0)[0]
+    return analyze_tags(preds)
 
 
-def process_folder(folder, progress_callback, list_callback):
+def classify_gif(path):
+    gif = Image.open(path)
+    votes = []
+
+    for i in range(min(10, getattr(gif, "n_frames", 1))):
+        gif.seek(i)
+        frame = preprocess_frame(np.array(gif.convert("RGB")))
+        preds = MODEL.predict(frame, verbose=0)[0]
+        votes.append(analyze_tags(preds))
+
+    return votes[0] if votes else None
+
+
+def classify_video(path):
+    cap = cv2.VideoCapture(path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 24
+
+    max_frames = int(min(cap.get(cv2.CAP_PROP_FRAME_COUNT), fps * 10))
+    votes = []
+
+    for i in range(0, max_frames, int(fps)):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+        ret, frame = cap.read()
+        if not ret:
+            break
+        img = preprocess_frame(frame)
+        preds = MODEL.predict(img, verbose=0)[0]
+        votes.append(analyze_tags(preds))
+
+    cap.release()
+
+    return votes[0] if votes else None
+
+
+# -------------------- PROCESSING --------------------
+
+def process_folder(folder, progress_cb, confidence_cb):
 
     start_new_log()
 
-    sfw_dir = os.path.join(folder, "sfw")
-    nsfw_dir = os.path.join(folder, "nsfw")
-
-    os.makedirs(sfw_dir, exist_ok=True)
-    os.makedirs(nsfw_dir, exist_ok=True)
+    hashes = set()
 
     image_ext = (".png", ".jpg", ".jpeg", ".webp")
+    gif_ext = (".gif",)
+    video_ext = (".mp4", ".webm")
 
     files = [
         f for f in os.listdir(folder)
         if os.path.isfile(os.path.join(folder, f))
-        and f.lower().endswith(image_ext)
+        and f.lower().endswith(image_ext + gif_ext + video_ext)
     ]
 
     total = len(files)
 
     for index, fname in enumerate(files):
 
+        if stop_event.is_set():
+            break
+
         path = os.path.join(folder, fname)
-        list_callback(fname)
+        file_md5 = file_hash(path)
 
-        try:
-            result = process_file(path)
+        if file_md5 in hashes:
+            dup_dir = os.path.join(folder, "duplicates")
+            os.makedirs(dup_dir, exist_ok=True)
+            os.rename(path, os.path.join(dup_dir, fname))
+            continue
 
-            is_nsfw = result["nsfw"]
-            gender = result["gender"]
-            is_sex = result["sex"]
-            is_furry = result["furry"]
-            is_yaoi = result["yaoi"]
-            is_lesbian = result["lesbian"]
+        hashes.add(file_md5)
 
-            if not is_nsfw:
-                target = os.path.join(sfw_dir, "furry") if is_furry else sfw_dir
-            else:
-                if is_furry:
-                    base = os.path.join(nsfw_dir, "furry")
-                    target = os.path.join(base, "sex") if is_sex else base
-                elif gender == "boys":
-                    base = os.path.join(nsfw_dir, "boys")
-                    if is_yaoi:
-                        target = os.path.join(base, "yaoi")
-                    elif is_sex:
-                        target = os.path.join(base, "sex")
-                    else:
-                        target = base
-                elif gender == "girls":
-                    base = os.path.join(nsfw_dir, "girls")
-                    if is_lesbian:
-                        target = os.path.join(base, "lesbian")
-                    elif is_sex:
-                        target = os.path.join(base, "sex")
-                    else:
-                        target = base
-                else:
-                    target = nsfw_dir
+        lower = fname.lower()
 
-            os.makedirs(target, exist_ok=True)
-            os.rename(path, os.path.join(target, fname))
+        if lower.endswith(video_ext):
+            result = classify_video(path)
+            animated = True
+        elif lower.endswith(gif_ext):
+            result = classify_gif(path)
+            animated = True
+        else:
+            result = classify_image(path)
+            animated = False
 
-            logging.info(f"""
+        if not result:
+            continue
+
+        confidence_cb(result["scores"]["nsfw"],
+                      result["scores"]["sex"],
+                      result["scores"]["furry"])
+
+        base = os.path.join(folder, "nsfw" if result["nsfw"] else "sfw")
+
+        if result["furry"]:
+            base = os.path.join(base, "furry")
+            if result["sex"] and result["nsfw"]:
+                base = os.path.join(base, "sex")
+
+        elif result["nsfw"] and result["gender"] == "boys":
+            base = os.path.join(base, "boys")
+            if result["yaoi"]:
+                base = os.path.join(base, "yaoi")
+            elif result["sex"]:
+                base = os.path.join(base, "sex")
+
+        elif result["nsfw"] and result["gender"] == "girls":
+            base = os.path.join(base, "girls")
+            if result["lesbian"]:
+                base = os.path.join(base, "lesbian")
+            elif result["sex"]:
+                base = os.path.join(base, "sex")
+
+        if animated:
+            base = os.path.join(base, "animated")
+
+        os.makedirs(base, exist_ok=True)
+        os.rename(path, os.path.join(base, fname))
+
+        logging.info(f"""
 File: {fname}
-NSFW Score: {result["scores"]["nsfw"]}
-Sex Score: {result["scores"]["sex"]}
-Furry Score: {result["scores"]["furry"]}
-Gender: {gender}
-Yaoi: {is_yaoi}
-Lesbian: {is_lesbian}
-Final: {target}
-----------------------------------------
+NSFW: {result['scores']['nsfw']}
+Sex: {result['scores']['sex']}
+Furry: {result['scores']['furry']}
+Gender: {result['gender']}
+Yaoi: {result['yaoi']}
+Lesbian: {result['lesbian']}
+Final: {base}
+-------------------------------------
 """)
 
-        except Exception as e:
-            logging.info(f"ERROR processing {fname}: {e}")
+        progress_cb(index + 1, total)
 
-        progress_callback(index + 1, total)
 
+# -------------------- GUI --------------------
 
 class App:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("SFW / NSFW Sorter")
-        self.root.geometry("500x400")
+        self.root.title("Advanced Sorter")
+        self.root.geometry("600x420")
 
         self.folder = tk.StringVar()
 
-        tk.Entry(root, textvariable=self.folder, width=40).pack(pady=5)
+        tk.Entry(root, textvariable=self.folder, width=50).pack(pady=5)
         tk.Button(root, text="Browse", command=self.browse).pack()
 
-        tk.Label(root, text="Confidence Threshold").pack(pady=5)
-
+        tk.Label(root, text="Confidence Threshold").pack()
         self.slider = tk.Scale(root, from_=0.1, to=0.8,
                                resolution=0.05,
                                orient="horizontal")
-        self.slider.set(0.30)
+        self.slider.set(0.30)  # DEFAULT
         self.slider.pack()
 
-        tk.Button(root, text="Start", command=self.start).pack(pady=10)
+        self.conf_label = tk.Label(root, text="Confidence: ---")
+        self.conf_label.pack(pady=10)
 
-        self.progress = ttk.Progressbar(root, length=400)
-        self.progress.pack(pady=5)
+        self.progress = ttk.Progressbar(root, length=500)
+        self.progress.pack(pady=10)
+
+        tk.Button(root, text="Start", command=self.start).pack(pady=10)
 
     def browse(self):
         folder = filedialog.askdirectory()
@@ -253,13 +327,11 @@ class App:
         global THRESHOLD
         THRESHOLD = self.slider.get()
 
-        folder = self.folder.get()
-        if not folder:
-            return
-
         threading.Thread(
             target=process_folder,
-            args=(folder, self.update_progress, lambda x: None),
+            args=(self.folder.get(),
+                  self.update_progress,
+                  self.update_confidence),
             daemon=True
         ).start()
 
@@ -267,6 +339,13 @@ class App:
         self.progress["maximum"] = total
         self.progress["value"] = done
 
+    def update_confidence(self, nsfw, sex, furry):
+        self.conf_label.config(
+            text=f"NSFW: {nsfw:.2f} | Sex: {sex:.2f} | Furry: {furry:.2f}"
+        )
+
+
+# -------------------- MAIN --------------------
 
 if __name__ == "__main__":
     root = tk.Tk()
