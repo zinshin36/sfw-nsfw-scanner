@@ -26,6 +26,7 @@ import deepdanbooru
 logging.info("Libraries loaded")
 
 MODEL = None
+TAGS = []
 
 
 def resource_path(relative_path):
@@ -35,11 +36,23 @@ def resource_path(relative_path):
 
 
 def load_model():
-    global MODEL
+    global MODEL, TAGS
     try:
         model_path = resource_path("model")
+
+        # Load model
         MODEL = deepdanbooru.project.load_model_from_project(model_path)
-        logging.info("Model loaded successfully")
+
+        # Compile to remove warning
+        MODEL.compile()
+
+        # Load tags manually
+        tags_path = os.path.join(model_path, "tags.txt")
+        with open(tags_path, "r", encoding="utf-8") as f:
+            TAGS = [line.strip() for line in f.readlines()]
+
+        logging.info("Model and tags loaded successfully")
+
     except Exception:
         logging.exception("Model failed to load")
         MODEL = None
@@ -103,20 +116,19 @@ def process_folder(folder, progress_callback, list_callback):
                 continue
             hashes.add(h)
 
-            # Load image correctly
+            # Load image
             image = deepdanbooru.data.load_image_for_evaluate(path, 512, 512)
             image = np.expand_dims(image, 0)
 
-            # Predict
+            # Predict (silent)
             predictions = MODEL.predict(image, verbose=0)[0]
 
-            # Map tags
-            tag_dict = dict(zip(MODEL.tags, predictions))
+            # Map tags manually
+            tag_dict = dict(zip(TAGS, predictions))
 
             explicit_score = tag_dict.get("rating:explicit", 0.0)
             safe_score = tag_dict.get("rating:safe", 0.0)
 
-            # Decide classification
             if explicit_score > safe_score:
                 os.rename(path, os.path.join(nsfw_dir, fname))
             else:
