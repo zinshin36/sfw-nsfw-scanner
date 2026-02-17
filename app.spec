@@ -6,9 +6,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('model', 'model'),
-    ],
+    datas=[],
     hiddenimports=[
         'tensorflow',
         'tensorflow.python',
@@ -19,7 +17,7 @@ a = Analysis(
         'numpy',
         'cv2'
     ],
-    hookspath=[],
+    hookspath=['hooks'],
     runtime_hooks=[],
     excludes=[],
     win_no_prefer_redirects=False,
@@ -27,14 +25,18 @@ a = Analysis(
     cipher=block_cipher,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(
+    a.pure,
+    a.zipped_data,
+    cipher=block_cipher
+)
 
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
-    name='AdvancedSorter',
+    name='sfw_nsfw_sorter',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -49,5 +51,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name='AdvancedSorter'
+    name='sfw_nsfw_sorter'
 )
