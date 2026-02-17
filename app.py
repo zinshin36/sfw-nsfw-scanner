@@ -108,7 +108,7 @@ def process_folder(folder, progress_callback, list_callback):
             image = np.expand_dims(image, 0)
 
             # Predict
-            predictions = MODEL.predict(image)[0]
+            predictions = MODEL.predict(image, verbose=0)[0]
 
             # Map tags
             tag_dict = dict(zip(MODEL.tags, predictions))
