@@ -29,11 +29,17 @@ jobs:
     - name: Build EXE
       run: pyinstaller app.spec
 
-    - name: Show dist folder
-      run: dir dist
+    - name: Show entire project tree
+      run: |
+        echo "==== ROOT ===="
+        dir
+        echo "==== DIST ===="
+        dir dist
+        echo "==== DIST RECURSIVE ===="
+        dir dist /s
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: windows-build
-        path: dist/app/
+        path: dist/**
