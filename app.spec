@@ -1,48 +1,45 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-import sys
-from PyInstaller.utils.hooks import collect_all
-
 block_cipher = None
 
-numpy_datas, numpy_binaries, numpy_hidden = collect_all("numpy")
-tensorflow_datas, tensorflow_binaries, tensorflow_hidden = collect_all("tensorflow")
-scipy_datas, scipy_binaries, scipy_hidden = collect_all("scipy")
-deepdanbooru_datas, deepdanbooru_binaries, deepdanbooru_hidden = collect_all("deepdanbooru")
-
 a = Analysis(
-    ["app.py"],
-    pathex=[sys.base_prefix],
-    binaries=(
-        numpy_binaries
-        + tensorflow_binaries
-        + scipy_binaries
-        + deepdanbooru_binaries
-    ),
-    datas=(
-        numpy_datas
-        + tensorflow_datas
-        + scipy_datas
-        + deepdanbooru_datas
-        + [("model", "model")]
-    ),
-    hiddenimports=(
-        numpy_hidden
-        + tensorflow_hidden
-        + scipy_hidden
-        + deepdanbooru_hidden
-    ),
-    excludes=["tensorflow_io"],
+    ['app.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('model', 'model'),
+    ],
+    hiddenimports=[
+        'tensorflow',
+        'tensorflow.python',
+        'tensorflow_io',
+        'deepdanbooru',
+        'deepdanbooru.data',
+        'deepdanbooru.project',
+        'numpy',
+        'cv2'
+    ],
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
 )
 
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
     [],
-    name="sfw_nsfw_sorter",
-    console=False,
+    exclude_binaries=True,
+    name='AdvancedSorter',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
 )
 
 coll = COLLECT(
@@ -50,5 +47,7 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name="sfw_nsfw_sorter"
+    strip=False,
+    upx=False,
+    name='AdvancedSorter'
 )
