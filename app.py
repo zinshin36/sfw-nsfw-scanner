@@ -157,7 +157,12 @@ def process_folder(folder, progress_callback, list_callback):
     nsfw_dir = os.path.join(folder, "nsfw")
     dup_dir = os.path.join(folder, "duplicates")
 
-    for d in [sfw_dir, nsfw_dir, dup_dir]:
+    # Animated subfolders
+    sfw_anim = os.path.join(sfw_dir, "animated")
+    nsfw_anim = os.path.join(nsfw_dir, "animated")
+    dup_anim = os.path.join(dup_dir, "animated")
+
+    for d in [sfw_dir, nsfw_dir, dup_dir, sfw_anim, nsfw_anim, dup_anim]:
         os.makedirs(d, exist_ok=True)
 
     hashes = set()
@@ -185,21 +190,23 @@ def process_folder(folder, progress_callback, list_callback):
         try:
             h = file_hash(path)
 
+            lower = fname.lower()
+            is_animated = lower.endswith(gif_ext + video_ext)
+
             if h in hashes:
-                os.rename(path, os.path.join(dup_dir, fname))
+                if is_animated:
+                    os.rename(path, os.path.join(dup_anim, fname))
+                else:
+                    os.rename(path, os.path.join(dup_dir, fname))
                 progress_callback(index + 1, total)
                 continue
 
             hashes.add(h)
 
-            lower = fname.lower()
-
             if lower.endswith(video_ext):
                 result = classify_video(path)
-
             elif lower.endswith(gif_ext):
                 result = classify_gif(path)
-
             else:
                 img = Image.open(path).convert("RGB")
                 img = img.resize((512, 512))
@@ -208,9 +215,11 @@ def process_folder(folder, progress_callback, list_callback):
                 result = classify_image_array(img)
 
             if result == "nsfw":
-                os.rename(path, os.path.join(nsfw_dir, fname))
+                target = nsfw_anim if is_animated else nsfw_dir
             else:
-                os.rename(path, os.path.join(sfw_dir, fname))
+                target = sfw_anim if is_animated else sfw_dir
+
+            os.rename(path, os.path.join(target, fname))
 
         except Exception:
             logging.exception("Failed processing %s", fname)
