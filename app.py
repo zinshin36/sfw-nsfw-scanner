@@ -1,9 +1,10 @@
 import os
 import sys
 import hashlib
-import logging
 import threading
 from datetime import datetime
+import logging
+
 import tkinter as tk
 from tkinter import filedialog, ttk
 
@@ -15,22 +16,46 @@ import tensorflow as tf
 import deepdanbooru
 
 
-# -------------------- GLOBALS --------------------
-
-MODEL = None
-TAGS = []
-THRESHOLD = 0.30
-LOG_FILE = None
-stop_event = threading.Event()
-
-
-# -------------------- MODEL LOADING --------------------
+# ---------------- RESOURCE PATH ----------------
 
 def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.abspath(relative_path)
 
+
+# ---------------- GLOBALS ----------------
+
+MODEL = None
+TAGS = []
+THRESHOLD = 0.30
+stop_event = threading.Event()
+hash_cache = set()
+
+
+# ---------------- LOGGING ----------------
+
+def create_log_file():
+    exe_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = os.path.join(exe_dir, f"sort_log_{timestamp}.txt")
+
+    logger = logging.getLogger()
+    logger.handlers.clear()
+    logger.setLevel(logging.INFO)
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+
+    logging.info("==== NEW RUN STARTED ====")
+    logging.info(f"Threshold: {THRESHOLD}")
+    logging.info("-------------------------")
+
+    return log_path
+
+
+# ---------------- MODEL LOADING ----------------
 
 def load_model():
     global MODEL, TAGS
@@ -47,22 +72,7 @@ def load_model():
 load_model()
 
 
-# -------------------- LOGGING --------------------
-
-def start_new_log():
-    global LOG_FILE
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    LOG_FILE = f"sort_log_{timestamp}.txt"
-
-    logging.basicConfig(
-        filename=LOG_FILE,
-        level=logging.INFO,
-        format="%(message)s",
-        force=True
-    )
-
-
-# -------------------- DUPLICATE HASH --------------------
+# ---------------- HASH ----------------
 
 def file_hash(path):
     h = hashlib.md5()
@@ -72,7 +82,7 @@ def file_hash(path):
     return h.hexdigest()
 
 
-# -------------------- PREPROCESS --------------------
+# ---------------- FRAME PREPROCESS ----------------
 
 def preprocess_frame(frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -81,7 +91,7 @@ def preprocess_frame(frame):
     return np.expand_dims(frame, 0)
 
 
-# -------------------- TAG ANALYSIS --------------------
+# ---------------- TAG ANALYSIS ----------------
 
 def analyze_tags(preds):
 
@@ -120,15 +130,8 @@ def analyze_tags(preds):
     )
     is_furry = furry_score > THRESHOLD
 
-    is_yaoi = (
-        tag_dict.get("yaoi", 0) > THRESHOLD or
-        (gender == "boys" and is_sex and girl_score < 0.1)
-    )
-
-    is_lesbian = (
-        tag_dict.get("lesbian", 0) > THRESHOLD or
-        (gender == "girls" and is_sex and boy_score < 0.1)
-    )
+    is_yaoi = tag_dict.get("yaoi", 0) > THRESHOLD
+    is_lesbian = tag_dict.get("lesbian", 0) > THRESHOLD
 
     return {
         "nsfw": is_nsfw,
@@ -145,7 +148,7 @@ def analyze_tags(preds):
     }
 
 
-# -------------------- CLASSIFIERS --------------------
+# ---------------- CLASSIFIERS ----------------
 
 def classify_image(path):
     img = Image.open(path).convert("RGB")
@@ -158,15 +161,10 @@ def classify_image(path):
 
 def classify_gif(path):
     gif = Image.open(path)
-    votes = []
-
-    for i in range(min(10, getattr(gif, "n_frames", 1))):
-        gif.seek(i)
-        frame = preprocess_frame(np.array(gif.convert("RGB")))
-        preds = MODEL.predict(frame, verbose=0)[0]
-        votes.append(analyze_tags(preds))
-
-    return votes[0] if votes else None
+    gif.seek(0)
+    frame = preprocess_frame(np.array(gif.convert("RGB")))
+    preds = MODEL.predict(frame, verbose=0)[0]
+    return analyze_tags(preds)
 
 
 def classify_video(path):
@@ -175,40 +173,26 @@ def classify_video(path):
     if fps <= 0:
         fps = 24
 
-    max_frames = int(min(cap.get(cv2.CAP_PROP_FRAME_COUNT), fps * 10))
-    votes = []
-
-    for i in range(0, max_frames, int(fps)):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
-        ret, frame = cap.read()
-        if not ret:
-            break
-        img = preprocess_frame(frame)
-        preds = MODEL.predict(img, verbose=0)[0]
-        votes.append(analyze_tags(preds))
-
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    ret, frame = cap.read()
     cap.release()
 
-    return votes[0] if votes else None
+    if not ret:
+        return None
+
+    frame = preprocess_frame(frame)
+    preds = MODEL.predict(frame, verbose=0)[0]
+    return analyze_tags(preds)
 
 
-# -------------------- PROCESSING --------------------
+# ---------------- PROCESS ----------------
 
 def process_folder(folder, progress_cb, confidence_cb):
 
-    start_new_log()
+    log_path = create_log_file()
 
-    hashes = set()
-
-    image_ext = (".png", ".jpg", ".jpeg", ".webp")
-    gif_ext = (".gif",)
-    video_ext = (".mp4", ".webm")
-
-    files = [
-        f for f in os.listdir(folder)
-        if os.path.isfile(os.path.join(folder, f))
-        and f.lower().endswith(image_ext + gif_ext + video_ext)
-    ]
+    files = [f for f in os.listdir(folder)
+             if os.path.isfile(os.path.join(folder, f))]
 
     total = len(files)
 
@@ -218,27 +202,28 @@ def process_folder(folder, progress_cb, confidence_cb):
             break
 
         path = os.path.join(folder, fname)
-        file_md5 = file_hash(path)
 
-        if file_md5 in hashes:
+        file_md5 = file_hash(path)
+        if file_md5 in hash_cache:
             dup_dir = os.path.join(folder, "duplicates")
             os.makedirs(dup_dir, exist_ok=True)
             os.rename(path, os.path.join(dup_dir, fname))
             continue
-
-        hashes.add(file_md5)
+        hash_cache.add(file_md5)
 
         lower = fname.lower()
 
-        if lower.endswith(video_ext):
-            result = classify_video(path)
-            animated = True
-        elif lower.endswith(gif_ext):
+        if lower.endswith((".gif",)):
             result = classify_gif(path)
             animated = True
-        else:
+        elif lower.endswith((".mp4", ".webm")):
+            result = classify_video(path)
+            animated = True
+        elif lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
             result = classify_image(path)
             animated = False
+        else:
+            continue
 
         if not result:
             continue
@@ -282,14 +267,17 @@ Furry: {result['scores']['furry']}
 Gender: {result['gender']}
 Yaoi: {result['yaoi']}
 Lesbian: {result['lesbian']}
-Final: {base}
+Final Folder: {base}
 -------------------------------------
 """)
 
         progress_cb(index + 1, total)
 
+    logging.info("==== RUN COMPLETE ====")
+    print(f"Log saved to: {log_path}")
 
-# -------------------- GUI --------------------
+
+# ---------------- GUI ----------------
 
 class App:
 
@@ -307,7 +295,7 @@ class App:
         self.slider = tk.Scale(root, from_=0.1, to=0.8,
                                resolution=0.05,
                                orient="horizontal")
-        self.slider.set(0.30)  # DEFAULT
+        self.slider.set(0.30)
         self.slider.pack()
 
         self.conf_label = tk.Label(root, text="Confidence: ---")
@@ -345,7 +333,7 @@ class App:
         )
 
 
-# -------------------- MAIN --------------------
+# ---------------- MAIN ----------------
 
 if __name__ == "__main__":
     root = tk.Tk()
