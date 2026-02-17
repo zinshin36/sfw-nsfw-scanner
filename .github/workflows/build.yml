@@ -26,19 +26,14 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Show installed packages
-      run: pip list
-
     - name: Build EXE
       run: pyinstaller app.spec
 
-    - name: Verify dist folder
-      run: |
-        echo "Listing dist directory..."
-        dir dist
+    - name: Show dist folder
+      run: dir dist
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: windows-build
-        path: dist/sfw_nsfw_sorter/
+        path: dist/app/
