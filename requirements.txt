@@ -1,7 +1,6 @@
-tensorflow==2.15.0
+tensorflow==2.10.1
+tensorflow-io==0.27.0
 deepdanbooru==1.0.2
-numpy==1.26.4
-Pillow==10.2.0
-opencv-python-headless==4.9.0.80
-pyinstaller==6.6.0
-tensorflow_io==0.30.0
+numpy
+pillow
+opencv-python
