@@ -1,22 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
+
+deep_datas, deep_bins, deep_hidden = collect_all("deepdanbooru")
+tf_datas, tf_bins, tf_hidden = collect_all("tensorflow")
+scipy_datas, scipy_bins, scipy_hidden = collect_all("scipy")
+tfio_datas, tfio_bins, tfio_hidden = collect_all("tensorflow_io")
 
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[],
-    datas=[],
-    hiddenimports=[
-        'tensorflow',
-        'tensorflow.python',
-        'tensorflow_io',
-        'deepdanbooru',
-        'deepdanbooru.data',
-        'deepdanbooru.project',
-        'numpy',
-        'cv2'
-    ],
+    binaries=deep_bins + tf_bins + scipy_bins + tfio_bins,
+    datas=deep_datas + tf_datas + scipy_datas + tfio_datas,
+    hiddenimports=deep_hidden + tf_hidden + scipy_hidden + tfio_hidden,
     hookspath=['hooks'],
     runtime_hooks=[],
     excludes=[],
@@ -25,18 +23,14 @@ a = Analysis(
     cipher=block_cipher,
 )
 
-pyz = PYZ(
-    a.pure,
-    a.zipped_data,
-    cipher=block_cipher
-)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=True,
-    name='sfw_nsfw_sorter',
+    exclude_binaries=False,
+    name='app',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -51,5 +45,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name='sfw_nsfw_sorter'
+    name='app',
 )
