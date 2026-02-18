@@ -27,31 +27,31 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # -------------------------------
-      # DOWNLOAD MODEL (NO RECURSION)
-      # -------------------------------
+      # ----------------------------------------
+      # DOWNLOAD MODEL (SAFE EXTRACTION)
+      # ----------------------------------------
       - name: Download DeepDanbooru Model
         shell: pwsh
         run: |
-          Write-Host "Downloading DeepDanbooru model..."
+          Write-Host "Creating model directory"
+          New-Item -ItemType Directory -Force -Path model
 
+          Write-Host "Downloading model zip"
           Invoke-WebRequest `
             -Uri "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" `
             -OutFile "model.zip"
 
-          Expand-Archive -Path "model.zip" -DestinationPath "." -Force
+          Write-Host "Extracting directly into model/"
+          Expand-Archive -Path "model.zip" -DestinationPath "model" -Force
+
           Remove-Item "model.zip"
 
-          # Rename extracted folder to 'model'
-          $extracted = Get-ChildItem -Directory | Where-Object { $_.Name -like "deepdanbooru-*" } | Select-Object -First 1
-          Rename-Item $extracted.FullName "model"
-
-          Write-Host "Model contents:"
+          Write-Host "Model directory contents:"
           Get-ChildItem -Recurse model
 
-      # -------------------------------
-      # BUILD EXE (ONEDIR SAFE)
-      # -------------------------------
+      # ----------------------------------------
+      # BUILD ONEDIR EXE
+      # ----------------------------------------
       - name: Build EXE
         run: |
           pyinstaller --clean app.spec
