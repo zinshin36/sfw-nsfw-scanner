@@ -3,10 +3,9 @@ import sys
 import shutil
 import hashlib
 import logging
-import datetime
+from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, ttk
-from datetime import datetime
 
 import numpy as np
 from PIL import Image
@@ -21,14 +20,11 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 # LOGGING (ALWAYS NEW FILE)
 # =============================
 
-# Determine if running as PyInstaller bundle
-if getattr(sys, 'frozen', False):
-    # Running as compiled PyInstaller executable
+if getattr(sys, "frozen", False):
     base_dir = os.path.dirname(sys.executable)
     log_dir = os.path.join(base_dir, "logs")
 else:
-    # Running as normal Python script
-    log_dir = "_internal/logs"
+    log_dir = "logs"
 
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
@@ -38,20 +34,32 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler()
-    ]
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 
 logging.info("Application started")
-logging.info(f"Log file: {log_file}")
 
 # =============================
 # LOAD MODEL
 # =============================
 
 logging.info("Loading DeepDanbooru model...")
-model = dd.project.load_model_from_project(".")
-logging.info("Model loaded")
+
+if getattr(sys, "frozen", False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.abspath(".")
+
+model_path = os.path.join(base_path, "model")
+
+if not os.path.exists(os.path.join(model_path, "project.json")):
+    logging.error(f"Model not found at {model_path}")
+    raise FileNotFoundError("DeepDanbooru model files missing.")
+
+model = dd.project.load_model_from_project(model_path)
+
+logging.info("Model loaded successfully")
 
 # =============================
 # HELPERS
@@ -94,7 +102,6 @@ def predict_image(image_array):
 # =============================
 
 class App:
-
     def __init__(self, root):
         self.root = root
         root.title("SFW / NSFW Sorter")
@@ -120,14 +127,13 @@ class App:
         folder = self.folder.get()
         threshold = self.threshold.get()
 
-        logging.info(f"Starting scan of {folder}")
+        logging.info(f"Scanning folder: {folder}")
         logging.info(f"Threshold: {threshold}")
 
         seen_hashes = {}
 
         for root_dir, _, files in os.walk(folder):
             for file in files:
-
                 path = os.path.join(root_dir, file)
                 ext = os.path.splitext(file)[1].lower()
 
@@ -141,17 +147,22 @@ class App:
                     shutil.move(path, os.path.join(dest, file))
                     logging.info(f"{file} → duplicate")
                     continue
+
                 seen_hashes[file_hash] = True
 
-                if is_animated(ext):
-                    frames = get_video_frame(path)
-                    if not frames:
-                        continue
-                    preds = [predict_image(f) for f in frames]
-                    prediction = np.mean(preds, axis=0)
-                else:
-                    img = np.array(Image.open(path).convert("RGB"))
-                    prediction = predict_image(img)
+                try:
+                    if is_animated(ext):
+                        frames = get_video_frame(path)
+                        if not frames:
+                            continue
+                        preds = [predict_image(f) for f in frames]
+                        prediction = np.mean(preds, axis=0)
+                    else:
+                        img = np.array(Image.open(path).convert("RGB"))
+                        prediction = predict_image(img)
+                except Exception as e:
+                    logging.error(f"Prediction failed for {file}: {e}")
+                    continue
 
                 tags = model.tags
                 scored = list(zip(tags, prediction))
@@ -161,7 +172,7 @@ class App:
                 self.conf_label.config(text=f"Confidence: {top_score:.2f}")
                 self.root.update()
 
-                logging.info(f"{file} → top tag: {top_tag} ({top_score:.3f})")
+                logging.info(f"{file} → {top_tag} ({top_score:.3f})")
 
                 base_folder = "sfw"
                 if top_score >= threshold and "rating:explicit" in [t[0] for t in scored[:5]]:
@@ -169,14 +180,9 @@ class App:
 
                 dest = os.path.join(folder, base_folder)
                 os.makedirs(dest, exist_ok=True)
-
                 shutil.move(path, os.path.join(dest, file))
 
         logging.info("Scan complete")
-
-# =============================
-# RUN
-# =============================
 
 if __name__ == "__main__":
     root = tk.Tk()
