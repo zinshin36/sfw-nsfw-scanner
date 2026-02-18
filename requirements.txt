@@ -1,5 +1,5 @@
 tensorflow==2.15.0
-tensorflow-io==0.36.0
+tensorflow-io==0.35.0
 deepdanbooru==1.0.2
 numpy==1.26.4
 pillow==10.1.0
