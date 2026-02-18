@@ -20,19 +20,17 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 # LOGGING (ALWAYS NEW FILE)
 # =============================
 
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
-log_filename = datetime.datetime.now().strftime("log_%Y%m%d_%H%M%S.txt")
-log_path = os.path.join(LOG_DIR, log_filename)
+log_dir = "_internal/logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(log_path, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
+        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
 )
 
 logging.info("Application started")
