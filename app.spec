@@ -8,13 +8,14 @@ deep_datas, deep_bins, deep_hidden = collect_all("deepdanbooru")
 tf_datas, tf_bins, tf_hidden = collect_all("tensorflow")
 scipy_datas, scipy_bins, scipy_hidden = collect_all("scipy")
 tfio_datas, tfio_bins, tfio_hidden = collect_all("tensorflow_io")
+numpy_datas, numpy_bins, numpy_hidden = collect_all("numpy")
 
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=deep_bins + tf_bins + scipy_bins + tfio_bins,
-    datas=deep_datas + tf_datas + scipy_datas + tfio_datas,
-    hiddenimports=deep_hidden + tf_hidden + scipy_hidden + tfio_hidden,
+    binaries=deep_bins + tf_bins + scipy_bins + tfio_bins + numpy_bins,
+    datas=deep_datas + tf_datas + scipy_datas + tfio_datas + numpy_datas,
+    hiddenimports=deep_hidden + tf_hidden + scipy_hidden + tfio_hidden + numpy_hidden,
     hookspath=['hooks'],
     runtime_hooks=[],
     excludes=[],
@@ -29,7 +30,7 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=False,
+    exclude_binaries=True,
     name='app',
     debug=False,
     bootloader_ignore_signals=False,
