@@ -21,7 +21,15 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 # LOGGING (ALWAYS NEW FILE)
 # =============================
 
-log_dir = "_internal/logs"
+# Determine if running as PyInstaller bundle
+if getattr(sys, 'frozen', False):
+    # Running as compiled PyInstaller executable
+    base_dir = os.path.dirname(sys.executable)
+    log_dir = os.path.join(base_dir, "logs")
+else:
+    # Running as normal Python script
+    log_dir = "_internal/logs"
+
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
