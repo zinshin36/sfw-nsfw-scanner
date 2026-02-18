@@ -1,4 +1,4 @@
-tensorflow==2.15.0
+tensorflow>=2.15.0
 tensorflow-io>=0.31.0
 deepdanbooru==1.0.2
 numpy
