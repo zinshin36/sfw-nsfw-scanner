@@ -32,6 +32,10 @@ jobs:
         run: |
           pyinstaller app.spec
 
+      - name: Create logs directory
+        run: |
+          mkdir -p dist\app\logs
+
       - name: Show dist folder
         run: |
           echo ==== DIST RECURSIVE ====
@@ -42,3 +46,17 @@ jobs:
         with:
           name: windows-build
           path: dist/
+
+      - name: Check for build errors and logs
+        if: always()
+        run: |
+          echo ==== CHECKING FOR BUILD LOGS ====
+          if (Test-Path "dist\app\logs") {
+            Get-ChildItem -Recurse dist\app\logs
+          } else {
+            echo "No logs directory created"
+          }
+          if (Test-Path "build") {
+            echo "==== BUILD FOLDER CONTENTS ===="
+            Get-ChildItem -Recurse build
+          }
