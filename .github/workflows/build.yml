@@ -12,9 +12,11 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10.11"
           architecture: "x64"
@@ -25,16 +27,40 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller requests
 
+      # ---------------------------------------
+      # DOWNLOAD & EXTRACT MODEL (POWERSHELL)
+      # ---------------------------------------
       - name: Download DeepDanbooru Model
+        shell: pwsh
         run: |
-          mkdir model
-          curl -L -o model.zip https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip
-          tar -xf model.zip 2>nul || powershell Expand-Archive model.zip -DestinationPath .
-          for /d %%i in (deepdanbooru-*) do xcopy "%%i\*" model\ /E /H /Y
+          Write-Host "Creating model directory"
+          New-Item -ItemType Directory -Force -Path model
+
+          Write-Host "Downloading model zip"
+          Invoke-WebRequest `
+            -Uri "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" `
+            -OutFile "model.zip"
+
+          Write-Host "Extracting model"
+          Expand-Archive -Path "model.zip" -DestinationPath "temp_model" -Force
+
+          Write-Host "Moving model contents"
+          $folder = Get-ChildItem -Path "temp_model" -Directory | Select-Object -First 1
+          Copy-Item -Path "$($folder.FullName)\*" -Destination "model" -Recurse -Force
+
+          Remove-Item -Recurse -Force "temp_model"
+          Remove-Item "model.zip"
+
+          Write-Host "Model ready"
+          Get-ChildItem model
 
       - name: Build ONEDIR
         run: |
           pyinstaller --clean app.spec
+
+      - name: Show dist structure
+        run: |
+          Get-ChildItem -Recurse dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
