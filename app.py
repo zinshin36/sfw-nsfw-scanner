@@ -35,7 +35,7 @@ logging.basicConfig(
 )
 
 logging.info("Application started")
-logging.info(f"Log file: {log_path}")
+logging.info(f"Log file: {log_file}")
 
 # =============================
 # LOAD MODEL
