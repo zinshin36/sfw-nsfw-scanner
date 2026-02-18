@@ -19,7 +19,7 @@ import tensorflow as tf
 import deepdanbooru as dd
 
 # =============================
-# BASE PATH (PyInstaller Safe)
+# BASE PATH
 # =============================
 
 if getattr(sys, "frozen", False):
@@ -29,11 +29,15 @@ else:
     base_path = os.path.abspath(".")
     base_dir = base_path
 
+# =============================
+# LOG ROOT
+# =============================
+
 log_root = os.path.join(base_dir, "logs")
 os.makedirs(log_root, exist_ok=True)
 
 # =============================
-# LOAD MODEL PROJECT
+# LOAD MODEL (STABLE METHOD)
 # =============================
 
 model_path = os.path.join(base_path, "model")
@@ -41,11 +45,14 @@ model_path = os.path.join(base_path, "model")
 if not os.path.exists(os.path.join(model_path, "project.json")):
     raise FileNotFoundError("DeepDanbooru model missing.")
 
-print("Loading DeepDanbooru project...")
+print("Loading DeepDanbooru model...")
 
-project = dd.project.load_project(model_path)
-model = project.load_model()
-tags = project.tags
+model = dd.project.load_model_from_project(model_path)
+
+# MANUAL TAG LOAD (fixes PyInstaller issue)
+tags_file = os.path.join(model_path, "tags.txt")
+with open(tags_file, "r", encoding="utf-8") as f:
+    tags = [line.strip() for line in f.readlines()]
 
 print(f"Loaded model with {len(tags)} tags")
 
@@ -85,7 +92,7 @@ def predict_image(image_array):
     return model.predict(image_array, verbose=0)[0]
 
 # =============================
-# CLASSIFICATION LOGIC
+# CLASSIFICATION
 # =============================
 
 def get_rating(scored):
@@ -101,13 +108,11 @@ def has_tag(scored, keyword, threshold=0.30):
     return False
 
 def determine_destination(scored, ext):
-    rating = get_rating(scored)
 
+    rating = get_rating(scored)
     animated = ext in [".gif", ".mp4", ".webm"]
 
-    # -------------------------
-    # SFW STRUCTURE
-    # -------------------------
+    # SFW
     if rating == "safe":
         if animated:
             return os.path.join("sfw", "animated")
@@ -115,28 +120,23 @@ def determine_destination(scored, ext):
             return os.path.join("sfw", "furry")
         return os.path.join("sfw")
 
-    # -------------------------
-    # NSFW STRUCTURE
-    # -------------------------
+    # NSFW
     if rating in ["explicit", "questionable", "sensitive"]:
 
         if animated:
             return os.path.join("nsfw", "animated")
 
-        # FURRY NSFW
         if has_tag(scored, "furry") or has_tag(scored, "anthro"):
             if has_tag(scored, "sex"):
                 return os.path.join("nsfw", "furry", "sex")
             return os.path.join("nsfw", "furry")
 
-        # BOYS
         if has_tag(scored, "yaoi") or has_tag(scored, "male/male"):
             return os.path.join("nsfw", "boys", "yaoi")
 
         if has_tag(scored, "1boy") and has_tag(scored, "sex"):
             return os.path.join("nsfw", "boys", "sex")
 
-        # GIRLS
         if has_tag(scored, "lesbian") or has_tag(scored, "yuri"):
             return os.path.join("nsfw", "girls", "lesbian")
 
@@ -155,7 +155,6 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title("Structured SFW / NSFW Sorter")
-
         self.folder = tk.StringVar()
 
         ttk.Button(root, text="Select Folder", command=self.select_folder).pack(pady=5)
@@ -167,10 +166,10 @@ class App:
         ttk.Button(root, text="Start Scan", command=self.start_scan).pack(pady=5)
 
         self.output = tk.Text(root, height=15)
-        self.output.pack(fill="both", expand=True, padx=5, pady=5)
+        self.output.pack(fill="both", expand=True)
 
-    def gui_log(self, message):
-        self.output.insert(tk.END, message + "\n")
+    def gui_log(self, msg):
+        self.output.insert(tk.END, msg + "\n")
         self.output.see(tk.END)
         self.root.update_idletasks()
 
@@ -178,8 +177,7 @@ class App:
         self.folder.set(filedialog.askdirectory())
 
     def start_scan(self):
-        thread = threading.Thread(target=self.process)
-        thread.start()
+        threading.Thread(target=self.process).start()
 
     def process(self):
         folder = self.folder.get()
@@ -191,38 +189,36 @@ class App:
         os.makedirs(scan_log_dir, exist_ok=True)
 
         log_file = os.path.join(scan_log_dir, "scan_log.txt")
-        logger = logging.getLogger(scan_time)
-        logger.setLevel(logging.INFO)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[logging.FileHandler(log_file, encoding="utf-8")]
+        )
 
-        handler = logging.FileHandler(log_file, encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-        logger.addHandler(handler)
-
-        files_to_scan = []
-        for root_dir, _, files in os.walk(folder):
-            for file in files:
+        files = []
+        for r, _, f in os.walk(folder):
+            for file in f:
                 ext = os.path.splitext(file)[1].lower()
-                if ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]:
-                    files_to_scan.append(os.path.join(root_dir, file))
+                if ext in [".png",".jpg",".jpeg",".webp",".gif",".mp4",".webm"]:
+                    files.append(os.path.join(r, file))
 
-        total = len(files_to_scan)
-        self.progress["maximum"] = total
+        self.progress["maximum"] = len(files)
         self.progress["value"] = 0
 
         seen_hashes = {}
 
-        for index, path in enumerate(files_to_scan):
+        for i, path in enumerate(files):
             file = os.path.basename(path)
             ext = os.path.splitext(file)[1].lower()
 
             try:
                 file_hash = hash_file(path)
                 if file_hash in seen_hashes:
-                    dup_folder = os.path.join(folder, "duplicate")
-                    os.makedirs(dup_folder, exist_ok=True)
-                    shutil.move(path, os.path.join(dup_folder, file))
+                    dup = os.path.join(folder,"duplicate")
+                    os.makedirs(dup, exist_ok=True)
+                    shutil.move(path, os.path.join(dup,file))
                     msg = f"{file} → duplicate"
-                    logger.info(msg)
+                    logging.info(msg)
                     self.gui_log(msg)
                     continue
                 seen_hashes[file_hash] = True
@@ -240,28 +236,26 @@ class App:
                 scored = list(zip(tags, prediction))
                 scored.sort(key=lambda x: x[1], reverse=True)
 
-                relative_dest = determine_destination(scored, ext)
-                final_folder = os.path.join(folder, relative_dest)
-                os.makedirs(final_folder, exist_ok=True)
+                relative = determine_destination(scored, ext)
+                dest = os.path.join(folder, relative)
+                os.makedirs(dest, exist_ok=True)
+                shutil.move(path, os.path.join(dest,file))
 
-                shutil.move(path, os.path.join(final_folder, file))
-
-                msg = f"{file} → {relative_dest}"
-                logger.info(msg)
+                msg = f"{file} → {relative}"
+                logging.info(msg)
                 self.gui_log(msg)
 
             except Exception as e:
-                err = f"{file} ERROR: {str(e)}"
-                logger.error(err)
-                self.gui_log(err)
+                msg = f"{file} ERROR: {e}"
+                logging.error(msg)
+                self.gui_log(msg)
 
-            self.progress["value"] = index + 1
+            self.progress["value"] = i+1
             self.root.update_idletasks()
 
-        logger.info("SCAN COMPLETE")
         self.gui_log("SCAN COMPLETE")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = App(root)
+    App(root)
     root.mainloop()
