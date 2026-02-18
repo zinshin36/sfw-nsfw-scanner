@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows ONEDIR
 
 on:
   push:
@@ -12,56 +12,32 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10.11"
+          architecture: "x64"
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install dependencies and Build
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
-          # We run the command via 'python -m' to ensure it's found in the PATH
-          python -m PyInstaller --onefile --windowed --hidden-import="numpy" app.py
+          pip install -r requirements.txt
+          pip install pyinstaller requests
 
-
-      
-      - name: Build EXE
+      - name: Download DeepDanbooru Model
         run: |
-          pyinstaller app.spec
+          mkdir model
+          curl -L -o model.zip https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip
+          tar -xf model.zip 2>nul || powershell Expand-Archive model.zip -DestinationPath .
+          for /d %%i in (deepdanbooru-*) do xcopy "%%i\*" model\ /E /H /Y
 
-      - name: Create logs directory
+      - name: Build ONEDIR
         run: |
-          mkdir -p dist\app\logs
-
-      - name: Show dist folder
-        run: |
-          echo ==== DIST RECURSIVE ====
-          Get-ChildItem -Recurse dist
+          pyinstaller --clean app.spec
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist/
-
-      - name: Check for build errors and logs
-        if: always()
-        run: |
-          echo ==== CHECKING FOR BUILD LOGS ====
-          if (Test-Path "dist\app\logs") {
-            Get-ChildItem -Recurse dist\app\logs
-          } else {
-            echo "No logs directory created"
-          }
-          if (Test-Path "build") {
-            echo "==== BUILD FOLDER CONTENTS ===="
-            Get-ChildItem -Recurse build
-          }
+          path: dist/app/
