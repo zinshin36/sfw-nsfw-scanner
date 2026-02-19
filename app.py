@@ -1,325 +1,272 @@
 import os
-import sys
 import shutil
-import hashlib
-import logging
 import threading
-import json
-import traceback
-from datetime import datetime
-import tkinter as tk
-from tkinter import filedialog, ttk
-
 import numpy as np
-from PIL import Image
-import cv2
-
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+import tkinter as tk
+from tkinter import filedialog, ttk, messagebox
 
 import tensorflow as tf
-import deepdanbooru as dd
+from tensorflow.keras.models import load_model
 
-# =============================
-# GLOBAL CRASH HANDLER
-# =============================
+# -------------------------------
+# CONFIG
+# -------------------------------
 
-def global_exception_hook(exctype, value, tb):
-    crash_log = os.path.join(os.getcwd(), "CRASH_LOG.txt")
-    with open(crash_log, "w", encoding="utf-8") as f:
-        f.write("UNHANDLED EXCEPTION\n\n")
-        traceback.print_exception(exctype, value, tb, file=f)
+MODEL_PATH = os.path.join("model", "model-resnet_custom_v3.h5")
+TAGS_PATH = os.path.join("model", "tags.txt")
 
-sys.excepthook = global_exception_hook
+IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif"]
+VIDEO_EXTENSIONS = [".mp4", ".webm"]
 
-# =============================
-# PATHS
-# =============================
+FORCE_NSFW_TAGS = {
+    "bulge",
+    "bikini",
+    "frilled_bikini",
+    "swimsuit"
+}
 
-if getattr(sys, "frozen", False):
-    base_path = sys._MEIPASS
-    base_dir = os.path.dirname(sys.executable)
-else:
-    base_path = os.path.abspath(".")
-    base_dir = base_path
+# -------------------------------
+# GLOBALS
+# -------------------------------
 
-log_root = os.path.join(base_dir, "logs")
-os.makedirs(log_root, exist_ok=True)
+model = None
+tags = []
+model_loaded = False
 
-# =============================
-# LOAD MODEL
-# =============================
 
-model_path = os.path.join(base_path, "model")
+# -------------------------------
+# LOAD MODEL (Lazy Load)
+# -------------------------------
 
-if not os.path.exists(os.path.join(model_path, "project.json")):
-    raise FileNotFoundError("DeepDanbooru model missing.")
+def load_model_once():
+    global model, tags, model_loaded
 
-print("Loading DeepDanbooru model...")
-model = dd.project.load_model_from_project(model_path)
+    if model_loaded:
+        return
 
-with open(os.path.join(model_path, "tags.txt"), "r", encoding="utf-8") as f:
-    tags = [line.strip() for line in f.readlines()]
+    print("Loading DeepDanbooru model...")
+    model = load_model(MODEL_PATH, compile=False)
 
-print(f"Loaded model with {len(tags)} tags")
+    with open(TAGS_PATH, "r", encoding="utf-8") as f:
+        tags = [line.strip() for line in f.readlines()]
 
-# =============================
-# HELPERS
-# =============================
+    model_loaded = True
+    print(f"Loaded model with {len(tags)} tags")
 
-def hash_file(path):
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
-def is_animated(ext):
-    return ext in [".gif", ".mp4", ".webm"]
+# -------------------------------
+# IMAGE PREPROCESS
+# -------------------------------
 
-def get_video_frames(path, max_seconds=4):
-    cap = cv2.VideoCapture(path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    max_frames = int(fps * max_seconds) if fps > 0 else 40
-    frames = []
-    count = 0
-    while count < max_frames:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame)
-        count += 1
-    cap.release()
-    return frames
+def preprocess_image(path):
+    from PIL import Image
 
-def predict_image(image_array):
-    image_array = cv2.resize(image_array, (512, 512))
-    image_array = image_array.astype(np.float32) / 255.0
-    image_array = np.expand_dims(image_array, 0)
-    return model.predict(image_array, verbose=0)[0]
+    image = Image.open(path).convert("RGB")
+    image = image.resize((512, 512))
+    image = np.array(image) / 255.0
+    return np.expand_dims(image, axis=0)
 
-# =============================
+
+# -------------------------------
+# PREDICT
+# -------------------------------
+
+def predict(path):
+    img = preprocess_image(path)
+    predictions = model.predict(img, verbose=0)[0]
+    tag_scores = dict(zip(tags, predictions))
+    return tag_scores
+
+
+# -------------------------------
 # FOLDER STRUCTURE
-# =============================
+# -------------------------------
 
-def create_structure(base_folder):
-    structure = [
-        "sfw",
-        "sfw/furry",
-        "sfw/animated",
-        "nsfw",
-        "nsfw/boys",
-        "nsfw/boys/yaoi",
-        "nsfw/boys/sex",
-        "nsfw/girls",
-        "nsfw/girls/lesbian",
-        "nsfw/girls/sex",
-        "nsfw/furry",
-        "nsfw/furry/sex",
-        "nsfw/animated",
-        "duplicate",
-        "unsorted"
-    ]
-    for path in structure:
-        os.makedirs(os.path.join(base_folder, path), exist_ok=True)
+def create_structure(base):
 
-# =============================
-# CLASSIFICATION
-# =============================
+    structure = {
+        "sfw": [
+            "furry",
+            "animated"
+        ],
+        "nsfw": {
+            "boys": ["yaoi", "sex"],
+            "girls": ["lesbian", "sex"],
+            "furry": ["sex"],
+            "animated": []
+        }
+    }
 
-SEX_TAGS = ["sex", "intercourse", "penetration", "cum"]
+    os.makedirs(os.path.join(base, "sfw"), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw"), exist_ok=True)
 
-def has_any(scored, keywords, threshold):
-    for tag, score in scored:
-        if score >= threshold and any(k in tag for k in keywords):
-            return True
-    return False
+    for folder in structure["sfw"]:
+        os.makedirs(os.path.join(base, "sfw", folder), exist_ok=True)
 
-def get_rating(scored):
-    for tag, score in scored:
-        if tag.startswith("rating:"):
-            return tag.split(":")[1], score
-    return "unknown", 0.0
+    for main_cat, subcats in structure["nsfw"].items():
+        os.makedirs(os.path.join(base, "nsfw", main_cat), exist_ok=True)
+        for sub in subcats:
+            os.makedirs(os.path.join(base, "nsfw", main_cat, sub), exist_ok=True)
 
-def determine_destination(scored, ext, threshold):
+    os.makedirs(os.path.join(base, "unsorted"), exist_ok=True)
 
-    rating, rating_score = get_rating(scored)
-    animated = is_animated(ext)
 
-    if rating == "safe":
-        if animated:
-            return "sfw/animated", rating_score
-        if has_any(scored, ["furry","anthro"], threshold):
-            return "sfw/furry", rating_score
-        return "sfw", rating_score
+# -------------------------------
+# CLASSIFICATION LOGIC
+# -------------------------------
 
-    if rating in ["explicit","questionable","sensitive"]:
+def classify(tag_scores, threshold):
 
-        if animated:
-            return "nsfw/animated", rating_score
+    # Force override tags to NSFW
+    for tag in FORCE_NSFW_TAGS:
+        if tag_scores.get(tag, 0) >= threshold:
+            return os.path.join("nsfw", "girls", "sex")
 
-        if has_any(scored, ["furry","anthro"], threshold):
-            if has_any(scored, SEX_TAGS, threshold):
-                return "nsfw/furry/sex", rating_score
-            return "nsfw/furry", rating_score
+    is_nsfw = tag_scores.get("explicit", 0) >= threshold
+    is_animated = tag_scores.get("animated", 0) >= threshold
+    is_furry = tag_scores.get("furry", 0) >= threshold
+    is_boys = tag_scores.get("1boy", 0) >= threshold
+    is_girls = tag_scores.get("1girl", 0) >= threshold
+    is_yaoi = tag_scores.get("yaoi", 0) >= threshold
+    is_lesbian = tag_scores.get("lesbian", 0) >= threshold
 
-        if has_any(scored, ["yaoi","male/male"], threshold):
-            return "nsfw/boys/yaoi", rating_score
+    if is_nsfw:
+        if is_boys:
+            if is_yaoi:
+                return os.path.join("nsfw", "boys", "yaoi")
+            return os.path.join("nsfw", "boys", "sex")
 
-        if has_any(scored, ["1boy"], threshold) and has_any(scored, SEX_TAGS, threshold):
-            return "nsfw/boys/sex", rating_score
+        if is_girls:
+            if is_lesbian:
+                return os.path.join("nsfw", "girls", "lesbian")
+            return os.path.join("nsfw", "girls", "sex")
 
-        if has_any(scored, ["lesbian","yuri"], threshold):
-            return "nsfw/girls/lesbian", rating_score
+        if is_furry:
+            return os.path.join("nsfw", "furry", "sex")
 
-        if has_any(scored, ["1girl"], threshold) and has_any(scored, SEX_TAGS, threshold):
-            return "nsfw/girls/sex", rating_score
+        if is_animated:
+            return os.path.join("nsfw", "animated")
 
-        return "nsfw", rating_score
+        return os.path.join("nsfw", "girls", "sex")
 
-    return "unsorted", rating_score
+    # SFW
+    if is_furry:
+        return os.path.join("sfw", "furry")
 
-# =============================
-# GUI
-# =============================
+    if is_animated:
+        return os.path.join("sfw", "animated")
 
-class App:
-    def __init__(self, root):
-        self.root = root
-        root.title("Production SFW / NSFW Scanner")
+    return "unsorted"
 
-        self.folder = tk.StringVar()
-        self.threshold = tk.DoubleVar(value=0.35)
 
-        ttk.Button(root, text="Select Folder", command=self.select_folder).pack(pady=5)
-        ttk.Entry(root, textvariable=self.folder, width=80).pack()
+# -------------------------------
+# SCAN PROCESS (ERRNO FIXED)
+# -------------------------------
 
-        ttk.Label(root, text="Tag Confidence Threshold").pack()
-        ttk.Scale(root, from_=0.20, to=0.80, variable=self.threshold, orient="horizontal").pack(fill="x")
+def scan_folder(folder, threshold, progress_bar, status_label):
 
-        self.progress = ttk.Progressbar(root, mode="determinate")
-        self.progress.pack(fill="x", padx=5, pady=5)
+    load_model_once()
+    create_structure(folder)
 
-        ttk.Button(root, text="Start Scan", command=self.start_scan).pack(pady=5)
+    # Build static file list FIRST (no recursion bugs)
+    files = []
+    excluded = {
+        os.path.join(folder, "sfw"),
+        os.path.join(folder, "nsfw"),
+        os.path.join(folder, "unsorted")
+    }
 
-        self.output = tk.Text(root, height=15)
-        self.output.pack(fill="both", expand=True)
+    for root_dir, dirs, filenames in os.walk(folder):
 
-    def gui_log(self, msg):
-        self.output.insert(tk.END, msg + "\n")
-        self.output.see(tk.END)
-        self.root.update_idletasks()
+        dirs[:] = [
+            d for d in dirs
+            if os.path.join(root_dir, d) not in excluded
+        ]
 
-    def select_folder(self):
-        self.folder.set(filedialog.askdirectory())
-
-    def start_scan(self):
-        threading.Thread(target=self.safe_process, daemon=True).start()
-
-    def safe_process(self):
-        try:
-            self.process()
-        except Exception:
-            traceback.print_exc()
-
-    def process(self):
-
-        folder = self.folder.get()
-        threshold = self.threshold.get()
-
-        if not folder:
-            return
-
-        create_structure(folder)
-
-        scan_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        scan_log_dir = os.path.join(log_root, scan_time)
-        os.makedirs(scan_log_dir, exist_ok=True)
-
-        log_file = os.path.join(scan_log_dir, "scan_log.txt")
-        json_file = os.path.join(scan_log_dir, "results.json")
-
-        logger = logging.getLogger(scan_time)
-        logger.handlers.clear()
-        logger.setLevel(logging.INFO)
-
-        handler = logging.FileHandler(log_file, encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-        logger.addHandler(handler)
-
-        results = []
-        seen_hashes = {}
-
-        files = []
-        for r, _, f in os.walk(folder):
-            for file in f:
-                ext = os.path.splitext(file)[1].lower()
-                if ext in [".png",".jpg",".jpeg",".webp",".gif",".mp4",".webm"]:
-                    files.append(os.path.join(r,file))
-
-        self.progress["maximum"] = len(files)
-
-        for i, path in enumerate(files):
-
-            file = os.path.basename(path)
+        for file in filenames:
             ext = os.path.splitext(file)[1].lower()
+            if ext in IMAGE_EXTENSIONS:
+                files.append(os.path.join(root_dir, file))
 
-            try:
-                file_hash = hash_file(path)
-                if file_hash in seen_hashes:
-                    dest = os.path.join(folder,"duplicate",file)
-                    shutil.move(path,dest)
-                    logger.info(f"{file} → duplicate")
-                    self.gui_log(f"{file} → duplicate")
-                    continue
-                seen_hashes[file_hash] = True
+    total = len(files)
 
-                if is_animated(ext):
-                    frames = get_video_frames(path)
-                    preds = [predict_image(f) for f in frames]
-                    prediction = np.mean(preds, axis=0)
-                else:
-                    img = np.array(Image.open(path).convert("RGB"))
-                    prediction = predict_image(img)
+    if total == 0:
+        messagebox.showinfo("Done", "No images found.")
+        return
 
-                scored = list(zip(tags,prediction))
-                scored.sort(key=lambda x:x[1], reverse=True)
+    progress_bar["maximum"] = total
 
-                relative, confidence = determine_destination(scored,ext,threshold)
+    for idx, file_path in enumerate(files):
 
-                dest_folder = os.path.join(folder,relative)
-                shutil.move(path, os.path.join(dest_folder,file))
+        try:
+            tag_scores = predict(file_path)
+            destination = classify(tag_scores, threshold)
 
-                logger.info(f"{file} → {relative} ({confidence:.3f})")
-                self.gui_log(f"{file} → {relative}")
+            target_dir = os.path.join(folder, destination)
+            os.makedirs(target_dir, exist_ok=True)
 
-                results.append({
-                    "file":file,
-                    "destination":relative,
-                    "confidence":float(confidence)
-                })
+            shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
 
-            except Exception as e:
-                logger.error(f"{file} ERROR: {e}")
-                self.gui_log(f"{file} ERROR")
+        except Exception as e:
+            print(f"ERROR: {e}")
 
-            self.progress["value"]=i+1
-            self.root.update_idletasks()
+        progress_bar["value"] = idx + 1
+        status_label.config(text=f"{idx + 1} / {total}")
 
-        with open(json_file,"w",encoding="utf-8") as f:
-            json.dump(results,f,indent=4)
+    messagebox.showinfo("Done", "Scan complete.")
 
-        logger.info("SCAN COMPLETE")
-        handler.flush()
-        handler.close()
 
-        self.gui_log("SCAN COMPLETE")
+# -------------------------------
+# UI
+# -------------------------------
 
-# =============================
-# START
-# =============================
+def start_scan():
+    folder = filedialog.askdirectory()
+    if not folder:
+        return
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+    threshold = threshold_slider.get()
+
+    threading.Thread(
+        target=scan_folder,
+        args=(folder, threshold, progress_bar, status_label),
+        daemon=True
+    ).start()
+
+
+def update_threshold_label(value):
+    threshold_value_label.config(text=f"{float(value):.2f}")
+
+
+root = tk.Tk()
+root.title("SFW / NSFW Sorter")
+root.geometry("500x300")
+
+threshold_label = tk.Label(root, text="Tag Confidence Threshold")
+threshold_label.pack(pady=5)
+
+threshold_slider = tk.Scale(
+    root,
+    from_=0.1,
+    to=1.0,
+    resolution=0.01,
+    orient=tk.HORIZONTAL,
+    length=300,
+    command=update_threshold_label
+)
+threshold_slider.set(0.6)
+threshold_slider.pack()
+
+threshold_value_label = tk.Label(root, text="0.60")
+threshold_value_label.pack()
+
+start_button = tk.Button(root, text="Select Folder & Scan", command=start_scan)
+start_button.pack(pady=10)
+
+progress_bar = ttk.Progressbar(root, length=400)
+progress_bar.pack(pady=10)
+
+status_label = tk.Label(root, text="0 / 0")
+status_label.pack()
+
+root.mainloop()
