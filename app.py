@@ -2,97 +2,175 @@ import os
 import sys
 import shutil
 import threading
+import logging
+import traceback
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
 import tensorflow as tf
 from tensorflow.keras.models import load_model
+from PIL import Image
+import cv2
 
-# -------------------------------
-# SAFE BASE PATH (PyInstaller Fix)
-# -------------------------------
+# =========================
+# LOGGING SETUP
+# =========================
 
-def get_base_path():
-    if hasattr(sys, "_MEIPASS"):
-        return sys._MEIPASS
-    return os.path.abspath(".")
+BASE_RUNTIME_PATH = os.path.abspath(".")
 
-BASE_PATH = get_base_path()
+if hasattr(sys, "_MEIPASS"):
+    BASE_RUNTIME_PATH = sys._MEIPASS
 
-MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
-TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
+LOG_DIR = os.path.join(os.getcwd(), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
 
-IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif"]
+logging.basicConfig(
+    filename=os.path.join(LOG_DIR, "app.log"),
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-FORCE_NSFW_TAGS = {
-    "bulge",
-    "bikini",
-    "frilled_bikini",
-    "swimsuit"
-}
+logging.info("Application starting...")
+
+# =========================
+# MODEL PATHS
+# =========================
+
+MODEL_PATH = os.path.join(BASE_RUNTIME_PATH, "model", "model-resnet_custom_v3.h5")
+TAGS_PATH = os.path.join(BASE_RUNTIME_PATH, "model", "tags.txt")
+
+IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
+VIDEO_EXTENSIONS = [".gif", ".mp4", ".webm"]
+
+FORCE_NSFW_TAGS = {"bulge", "bikini", "frilled_bikini", "swimsuit"}
 
 model = None
 tags = []
 model_loaded = False
 model_lock = threading.Lock()
 
-# -------------------------------
-# LOAD MODEL SAFELY
-# -------------------------------
+# =========================
+# LOAD MODEL
+# =========================
 
 def load_model_once():
     global model, tags, model_loaded
 
     with model_lock:
-
         if model_loaded:
             return True
 
-        if not os.path.exists(MODEL_PATH):
-            messagebox.showerror(
-                "Model Missing",
-                f"Model file not found:\n{MODEL_PATH}\n\nMake sure 'model' folder is bundled."
-            )
-            return False
-
         try:
-            print("Loading DeepDanbooru model...")
+            logging.info("Loading model...")
             model = load_model(MODEL_PATH, compile=False)
 
             with open(TAGS_PATH, "r", encoding="utf-8") as f:
                 tags = [line.strip() for line in f.readlines()]
 
             model_loaded = True
-            print(f"Loaded model with {len(tags)} tags")
+            logging.info(f"Model loaded with {len(tags)} tags")
             return True
 
         except Exception as e:
-            messagebox.showerror("Model Load Error", str(e))
+            logging.error(traceback.format_exc())
+            messagebox.showerror("Model Error", str(e))
             return False
 
 
-# -------------------------------
-# IMAGE PREPROCESS
-# -------------------------------
+# =========================
+# PREPROCESS IMAGE
+# =========================
 
-def preprocess_image(path):
-    from PIL import Image
-    image = Image.open(path).convert("RGB")
-    image = image.resize((512, 512))
-    image = np.array(image) / 255.0
-    return np.expand_dims(image, axis=0)
+def preprocess_array(img_array):
+    img_array = cv2.resize(img_array, (512, 512))
+    img_array = img_array / 255.0
+    return np.expand_dims(img_array, axis=0)
 
 
-def predict(path):
-    img = preprocess_image(path)
-    predictions = model.predict(img, verbose=0)[0]
+def predict_array(img_array):
+    processed = preprocess_array(img_array)
+    predictions = model.predict(processed, verbose=0)[0]
     return dict(zip(tags, predictions))
 
 
-# -------------------------------
-# STRUCTURE
-# -------------------------------
+# =========================
+# VIDEO/GIF FRAME EXTRACT (FIRST 10 SECONDS)
+# =========================
+
+def extract_frames(path):
+
+    frames = []
+
+    if path.lower().endswith(".gif"):
+        cap = cv2.VideoCapture(path)
+    else:
+        cap = cv2.VideoCapture(path)
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 24
+
+    max_frames = int(fps * 10)
+
+    count = 0
+
+    while cap.isOpened() and count < max_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+        count += 1
+
+    cap.release()
+
+    return frames
+
+
+# =========================
+# CLASSIFICATION LOGIC
+# =========================
+
+def classify(tag_scores):
+
+    def score(tag):
+        return tag_scores.get(tag, 0)
+
+    # Force NSFW override
+    for tag in FORCE_NSFW_TAGS:
+        if score(tag) >= 0.35:
+            return os.path.join("nsfw", "girls", "sex")
+
+    if score("yaoi") >= 0.35:
+        return os.path.join("nsfw", "boys", "yaoi")
+
+    if score("lesbian") >= 0.35:
+        return os.path.join("nsfw", "girls", "lesbian")
+
+    if score("sex") >= 0.35 and score("1boy") >= score("1girl"):
+        return os.path.join("nsfw", "boys", "sex")
+
+    if score("sex") >= 0.35:
+        return os.path.join("nsfw", "girls", "sex")
+
+    if score("furry") >= 0.35 and score("sex") >= 0.35:
+        return os.path.join("nsfw", "furry", "sex")
+
+    if score("animated") >= 0.35 and score("sex") >= 0.35:
+        return os.path.join("nsfw", "animated")
+
+    if score("furry") >= 0.35:
+        return os.path.join("sfw", "furry")
+
+    if score("animated") >= 0.20:
+        return os.path.join("sfw", "animated")
+
+    return os.path.join("sfw", "animated")
+
+
+# =========================
+# FOLDER STRUCTURE
+# =========================
 
 def create_structure(base):
 
@@ -108,58 +186,12 @@ def create_structure(base):
     os.makedirs(os.path.join(base, "nsfw", "furry", "sex"), exist_ok=True)
     os.makedirs(os.path.join(base, "nsfw", "animated"), exist_ok=True)
 
-    os.makedirs(os.path.join(base, "unsorted"), exist_ok=True)
 
-
-# -------------------------------
-# CLASSIFY
-# -------------------------------
-
-def classify(tag_scores, threshold):
-
-    # Forced override
-    for tag in FORCE_NSFW_TAGS:
-        if tag_scores.get(tag, 0) >= threshold:
-            return os.path.join("nsfw", "girls", "sex")
-
-    is_nsfw = tag_scores.get("explicit", 0) >= threshold
-    is_animated = tag_scores.get("animated", 0) >= threshold
-    is_furry = tag_scores.get("furry", 0) >= threshold
-    is_boys = tag_scores.get("1boy", 0) >= threshold
-    is_girls = tag_scores.get("1girl", 0) >= threshold
-    is_yaoi = tag_scores.get("yaoi", 0) >= threshold
-    is_lesbian = tag_scores.get("lesbian", 0) >= threshold
-
-    if is_nsfw:
-
-        if is_boys:
-            return os.path.join("nsfw", "boys", "yaoi") if is_yaoi else os.path.join("nsfw", "boys", "sex")
-
-        if is_girls:
-            return os.path.join("nsfw", "girls", "lesbian") if is_lesbian else os.path.join("nsfw", "girls", "sex")
-
-        if is_furry:
-            return os.path.join("nsfw", "furry", "sex")
-
-        if is_animated:
-            return os.path.join("nsfw", "animated")
-
-        return os.path.join("nsfw", "girls", "sex")
-
-    if is_furry:
-        return os.path.join("sfw", "furry")
-
-    if is_animated:
-        return os.path.join("sfw", "animated")
-
-    return "unsorted"
-
-
-# -------------------------------
+# =========================
 # SCAN
-# -------------------------------
+# =========================
 
-def scan_folder(folder, threshold, progress_bar, status_label):
+def scan_folder(folder):
 
     if not load_model_once():
         return
@@ -167,92 +199,84 @@ def scan_folder(folder, threshold, progress_bar, status_label):
     create_structure(folder)
 
     files = []
-    excluded = {
-        os.path.join(folder, "sfw"),
-        os.path.join(folder, "nsfw"),
-        os.path.join(folder, "unsorted")
-    }
 
     for root_dir, dirs, filenames in os.walk(folder):
-        dirs[:] = [d for d in dirs if os.path.join(root_dir, d) not in excluded]
-
         for file in filenames:
             ext = os.path.splitext(file)[1].lower()
-            if ext in IMAGE_EXTENSIONS:
+            if ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS:
                 files.append(os.path.join(root_dir, file))
 
     total = len(files)
-
-    if total == 0:
-        messagebox.showinfo("Done", "No images found.")
-        return
-
     progress_bar["maximum"] = total
 
     for idx, file_path in enumerate(files):
+
         try:
-            tag_scores = predict(file_path)
-            destination = classify(tag_scores, threshold)
+            ext = os.path.splitext(file_path)[1].lower()
+
+            if ext in IMAGE_EXTENSIONS:
+                img = cv2.imread(file_path)
+                tag_scores = predict_array(img)
+
+            else:
+                frames = extract_frames(file_path)
+                combined_scores = {}
+
+                for frame in frames:
+                    scores = predict_array(frame)
+                    for k, v in scores.items():
+                        combined_scores[k] = max(combined_scores.get(k, 0), v)
+
+                tag_scores = combined_scores
+
+            destination = classify(tag_scores)
             target_dir = os.path.join(folder, destination)
+
             shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
-        except Exception as e:
-            print(f"ERROR: {e}")
+
+            logging.info(f"MOVED: {file_path} → {destination}")
+
+            current_file_label.config(text=f"Moving: {os.path.basename(file_path)}")
+            destination_label.config(text=f"To: {destination}")
+
+        except Exception:
+            logging.error(traceback.format_exc())
 
         progress_bar["value"] = idx + 1
-        status_label.config(text=f"{idx + 1} / {total}")
+        progress_label.config(text=f"{idx+1}/{total}")
 
-    messagebox.showinfo("Done", "Scan complete.")
+    messagebox.showinfo("Done", "Scan Complete.")
+    logging.info("Scan completed.")
 
 
-# -------------------------------
-# UI
-# -------------------------------
+# =========================
+# GUI
+# =========================
 
 def start_scan():
     folder = filedialog.askdirectory()
     if not folder:
         return
 
-    threshold = threshold_slider.get()
-
-    threading.Thread(
-        target=scan_folder,
-        args=(folder, threshold, progress_bar, status_label),
-        daemon=True
-    ).start()
-
-
-def update_threshold_label(value):
-    threshold_value_label.config(text=f"{float(value):.2f}")
+    threading.Thread(target=scan_folder, args=(folder,), daemon=True).start()
 
 
 root = tk.Tk()
-root.title("SFW / NSFW Sorter")
-root.geometry("500x300")
-
-tk.Label(root, text="Tag Confidence Threshold").pack(pady=5)
-
-threshold_slider = tk.Scale(
-    root,
-    from_=0.1,
-    to=1.0,
-    resolution=0.01,
-    orient=tk.HORIZONTAL,
-    length=300,
-    command=update_threshold_label
-)
-threshold_slider.set(0.6)
-threshold_slider.pack()
-
-threshold_value_label = tk.Label(root, text="0.60")
-threshold_value_label.pack()
+root.title("Media Auto Sorter")
+root.geometry("600x350")
 
 tk.Button(root, text="Select Folder & Scan", command=start_scan).pack(pady=10)
 
-progress_bar = ttk.Progressbar(root, length=400)
+progress_bar = ttk.Progressbar(root, length=500)
 progress_bar.pack(pady=10)
 
-status_label = tk.Label(root, text="0 / 0")
-status_label.pack()
+progress_label = tk.Label(root, text="0/0")
+progress_label.pack()
+
+current_file_label = tk.Label(root, text="Current File: ")
+current_file_label.pack(pady=5)
+
+destination_label = tk.Label(root, text="Destination: ")
+destination_label.pack(pady=5)
 
 root.mainloop()
