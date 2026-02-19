@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import threading
 import numpy as np
@@ -9,14 +10,20 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 
 # -------------------------------
-# CONFIG
+# SAFE BASE PATH (PyInstaller Fix)
 # -------------------------------
 
-MODEL_PATH = os.path.join("model", "model-resnet_custom_v3.h5")
-TAGS_PATH = os.path.join("model", "tags.txt")
+def get_base_path():
+    if hasattr(sys, "_MEIPASS"):
+        return sys._MEIPASS
+    return os.path.abspath(".")
+
+BASE_PATH = get_base_path()
+
+MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
+TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
 
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif"]
-VIDEO_EXTENSIONS = [".mp4", ".webm"]
 
 FORCE_NSFW_TAGS = {
     "bulge",
@@ -25,33 +32,44 @@ FORCE_NSFW_TAGS = {
     "swimsuit"
 }
 
-# -------------------------------
-# GLOBALS
-# -------------------------------
-
 model = None
 tags = []
 model_loaded = False
-
+model_lock = threading.Lock()
 
 # -------------------------------
-# LOAD MODEL (Lazy Load)
+# LOAD MODEL SAFELY
 # -------------------------------
 
 def load_model_once():
     global model, tags, model_loaded
 
-    if model_loaded:
-        return
+    with model_lock:
 
-    print("Loading DeepDanbooru model...")
-    model = load_model(MODEL_PATH, compile=False)
+        if model_loaded:
+            return True
 
-    with open(TAGS_PATH, "r", encoding="utf-8") as f:
-        tags = [line.strip() for line in f.readlines()]
+        if not os.path.exists(MODEL_PATH):
+            messagebox.showerror(
+                "Model Missing",
+                f"Model file not found:\n{MODEL_PATH}\n\nMake sure 'model' folder is bundled."
+            )
+            return False
 
-    model_loaded = True
-    print(f"Loaded model with {len(tags)} tags")
+        try:
+            print("Loading DeepDanbooru model...")
+            model = load_model(MODEL_PATH, compile=False)
+
+            with open(TAGS_PATH, "r", encoding="utf-8") as f:
+                tags = [line.strip() for line in f.readlines()]
+
+            model_loaded = True
+            print(f"Loaded model with {len(tags)} tags")
+            return True
+
+        except Exception as e:
+            messagebox.showerror("Model Load Error", str(e))
+            return False
 
 
 # -------------------------------
@@ -60,64 +78,46 @@ def load_model_once():
 
 def preprocess_image(path):
     from PIL import Image
-
     image = Image.open(path).convert("RGB")
     image = image.resize((512, 512))
     image = np.array(image) / 255.0
     return np.expand_dims(image, axis=0)
 
 
-# -------------------------------
-# PREDICT
-# -------------------------------
-
 def predict(path):
     img = preprocess_image(path)
     predictions = model.predict(img, verbose=0)[0]
-    tag_scores = dict(zip(tags, predictions))
-    return tag_scores
+    return dict(zip(tags, predictions))
 
 
 # -------------------------------
-# FOLDER STRUCTURE
+# STRUCTURE
 # -------------------------------
 
 def create_structure(base):
 
-    structure = {
-        "sfw": [
-            "furry",
-            "animated"
-        ],
-        "nsfw": {
-            "boys": ["yaoi", "sex"],
-            "girls": ["lesbian", "sex"],
-            "furry": ["sex"],
-            "animated": []
-        }
-    }
+    os.makedirs(os.path.join(base, "sfw", "furry"), exist_ok=True)
+    os.makedirs(os.path.join(base, "sfw", "animated"), exist_ok=True)
 
-    os.makedirs(os.path.join(base, "sfw"), exist_ok=True)
-    os.makedirs(os.path.join(base, "nsfw"), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw", "boys", "yaoi"), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw", "boys", "sex"), exist_ok=True)
 
-    for folder in structure["sfw"]:
-        os.makedirs(os.path.join(base, "sfw", folder), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw", "girls", "lesbian"), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw", "girls", "sex"), exist_ok=True)
 
-    for main_cat, subcats in structure["nsfw"].items():
-        os.makedirs(os.path.join(base, "nsfw", main_cat), exist_ok=True)
-        for sub in subcats:
-            os.makedirs(os.path.join(base, "nsfw", main_cat, sub), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw", "furry", "sex"), exist_ok=True)
+    os.makedirs(os.path.join(base, "nsfw", "animated"), exist_ok=True)
 
     os.makedirs(os.path.join(base, "unsorted"), exist_ok=True)
 
 
 # -------------------------------
-# CLASSIFICATION LOGIC
+# CLASSIFY
 # -------------------------------
 
 def classify(tag_scores, threshold):
 
-    # Force override tags to NSFW
+    # Forced override
     for tag in FORCE_NSFW_TAGS:
         if tag_scores.get(tag, 0) >= threshold:
             return os.path.join("nsfw", "girls", "sex")
@@ -131,15 +131,12 @@ def classify(tag_scores, threshold):
     is_lesbian = tag_scores.get("lesbian", 0) >= threshold
 
     if is_nsfw:
+
         if is_boys:
-            if is_yaoi:
-                return os.path.join("nsfw", "boys", "yaoi")
-            return os.path.join("nsfw", "boys", "sex")
+            return os.path.join("nsfw", "boys", "yaoi") if is_yaoi else os.path.join("nsfw", "boys", "sex")
 
         if is_girls:
-            if is_lesbian:
-                return os.path.join("nsfw", "girls", "lesbian")
-            return os.path.join("nsfw", "girls", "sex")
+            return os.path.join("nsfw", "girls", "lesbian") if is_lesbian else os.path.join("nsfw", "girls", "sex")
 
         if is_furry:
             return os.path.join("nsfw", "furry", "sex")
@@ -149,7 +146,6 @@ def classify(tag_scores, threshold):
 
         return os.path.join("nsfw", "girls", "sex")
 
-    # SFW
     if is_furry:
         return os.path.join("sfw", "furry")
 
@@ -160,15 +156,16 @@ def classify(tag_scores, threshold):
 
 
 # -------------------------------
-# SCAN PROCESS (ERRNO FIXED)
+# SCAN
 # -------------------------------
 
 def scan_folder(folder, threshold, progress_bar, status_label):
 
-    load_model_once()
+    if not load_model_once():
+        return
+
     create_structure(folder)
 
-    # Build static file list FIRST (no recursion bugs)
     files = []
     excluded = {
         os.path.join(folder, "sfw"),
@@ -177,11 +174,7 @@ def scan_folder(folder, threshold, progress_bar, status_label):
     }
 
     for root_dir, dirs, filenames in os.walk(folder):
-
-        dirs[:] = [
-            d for d in dirs
-            if os.path.join(root_dir, d) not in excluded
-        ]
+        dirs[:] = [d for d in dirs if os.path.join(root_dir, d) not in excluded]
 
         for file in filenames:
             ext = os.path.splitext(file)[1].lower()
@@ -197,16 +190,11 @@ def scan_folder(folder, threshold, progress_bar, status_label):
     progress_bar["maximum"] = total
 
     for idx, file_path in enumerate(files):
-
         try:
             tag_scores = predict(file_path)
             destination = classify(tag_scores, threshold)
-
             target_dir = os.path.join(folder, destination)
-            os.makedirs(target_dir, exist_ok=True)
-
             shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
-
         except Exception as e:
             print(f"ERROR: {e}")
 
@@ -242,8 +230,7 @@ root = tk.Tk()
 root.title("SFW / NSFW Sorter")
 root.geometry("500x300")
 
-threshold_label = tk.Label(root, text="Tag Confidence Threshold")
-threshold_label.pack(pady=5)
+tk.Label(root, text="Tag Confidence Threshold").pack(pady=5)
 
 threshold_slider = tk.Scale(
     root,
@@ -260,8 +247,7 @@ threshold_slider.pack()
 threshold_value_label = tk.Label(root, text="0.60")
 threshold_value_label.pack()
 
-start_button = tk.Button(root, text="Select Folder & Scan", command=start_scan)
-start_button.pack(pady=10)
+tk.Button(root, text="Select Folder & Scan", command=start_scan).pack(pady=10)
 
 progress_bar = ttk.Progressbar(root, length=400)
 progress_bar.pack(pady=10)
