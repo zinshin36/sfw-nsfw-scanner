@@ -5,6 +5,7 @@ import hashlib
 import logging
 import threading
 import json
+import traceback
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, ttk
@@ -20,7 +21,19 @@ import tensorflow as tf
 import deepdanbooru as dd
 
 # =============================
-# PATH HANDLING (PyInstaller Safe)
+# GLOBAL CRASH HANDLER
+# =============================
+
+def global_exception_hook(exctype, value, tb):
+    crash_log = os.path.join(os.getcwd(), "CRASH_LOG.txt")
+    with open(crash_log, "w", encoding="utf-8") as f:
+        f.write("UNHANDLED EXCEPTION\n\n")
+        traceback.print_exception(exctype, value, tb, file=f)
+
+sys.excepthook = global_exception_hook
+
+# =============================
+# PATHS
 # =============================
 
 if getattr(sys, "frozen", False):
@@ -34,7 +47,7 @@ log_root = os.path.join(base_dir, "logs")
 os.makedirs(log_root, exist_ok=True)
 
 # =============================
-# LOAD MODEL (Stable Method)
+# LOAD MODEL
 # =============================
 
 model_path = os.path.join(base_path, "model")
@@ -51,7 +64,7 @@ with open(os.path.join(model_path, "tags.txt"), "r", encoding="utf-8") as f:
 print(f"Loaded model with {len(tags)} tags")
 
 # =============================
-# HELPER FUNCTIONS
+# HELPERS
 # =============================
 
 def hash_file(path):
@@ -86,74 +99,7 @@ def predict_image(image_array):
     return model.predict(image_array, verbose=0)[0]
 
 # =============================
-# CLASSIFICATION LOGIC
-# =============================
-
-SEX_TAGS = ["sex", "intercourse", "penetration", "cum"]
-
-def has_tag(scored, keyword, threshold):
-    for tag, score in scored:
-        if keyword in tag and score >= threshold:
-            return True
-    return False
-
-def has_any_tag(scored, keywords, threshold):
-    for tag, score in scored:
-        if score >= threshold and any(k in tag for k in keywords):
-            return True
-    return False
-
-def get_rating(scored):
-    for tag, score in scored:
-        if tag.startswith("rating:"):
-            return tag.split(":")[1], score
-    return "unknown", 0.0
-
-def determine_destination(scored, ext, threshold):
-
-    rating, rating_score = get_rating(scored)
-    animated = is_animated(ext)
-
-    # SFW
-    if rating == "safe":
-        if animated:
-            return "sfw/animated", rating_score
-        if has_any_tag(scored, ["furry", "anthro"], threshold):
-            return "sfw/furry", rating_score
-        return "sfw", rating_score
-
-    # NSFW
-    if rating in ["explicit", "questionable", "sensitive"]:
-
-        if animated:
-            return "nsfw/animated", rating_score
-
-        # FURRY
-        if has_any_tag(scored, ["furry", "anthro"], threshold):
-            if has_any_tag(scored, SEX_TAGS, threshold):
-                return "nsfw/furry/sex", rating_score
-            return "nsfw/furry", rating_score
-
-        # BOYS
-        if has_any_tag(scored, ["yaoi", "male/male"], threshold):
-            return "nsfw/boys/yaoi", rating_score
-
-        if has_any_tag(scored, ["1boy"], threshold) and has_any_tag(scored, SEX_TAGS, threshold):
-            return "nsfw/boys/sex", rating_score
-
-        # GIRLS
-        if has_any_tag(scored, ["lesbian", "yuri"], threshold):
-            return "nsfw/girls/lesbian", rating_score
-
-        if has_any_tag(scored, ["1girl"], threshold) and has_any_tag(scored, SEX_TAGS, threshold):
-            return "nsfw/girls/sex", rating_score
-
-        return "nsfw", rating_score
-
-    return "unsorted", rating_score
-
-# =============================
-# PRECREATE FOLDER TREE
+# FOLDER STRUCTURE
 # =============================
 
 def create_structure(base_folder):
@@ -178,6 +124,62 @@ def create_structure(base_folder):
         os.makedirs(os.path.join(base_folder, path), exist_ok=True)
 
 # =============================
+# CLASSIFICATION
+# =============================
+
+SEX_TAGS = ["sex", "intercourse", "penetration", "cum"]
+
+def has_any(scored, keywords, threshold):
+    for tag, score in scored:
+        if score >= threshold and any(k in tag for k in keywords):
+            return True
+    return False
+
+def get_rating(scored):
+    for tag, score in scored:
+        if tag.startswith("rating:"):
+            return tag.split(":")[1], score
+    return "unknown", 0.0
+
+def determine_destination(scored, ext, threshold):
+
+    rating, rating_score = get_rating(scored)
+    animated = is_animated(ext)
+
+    if rating == "safe":
+        if animated:
+            return "sfw/animated", rating_score
+        if has_any(scored, ["furry","anthro"], threshold):
+            return "sfw/furry", rating_score
+        return "sfw", rating_score
+
+    if rating in ["explicit","questionable","sensitive"]:
+
+        if animated:
+            return "nsfw/animated", rating_score
+
+        if has_any(scored, ["furry","anthro"], threshold):
+            if has_any(scored, SEX_TAGS, threshold):
+                return "nsfw/furry/sex", rating_score
+            return "nsfw/furry", rating_score
+
+        if has_any(scored, ["yaoi","male/male"], threshold):
+            return "nsfw/boys/yaoi", rating_score
+
+        if has_any(scored, ["1boy"], threshold) and has_any(scored, SEX_TAGS, threshold):
+            return "nsfw/boys/sex", rating_score
+
+        if has_any(scored, ["lesbian","yuri"], threshold):
+            return "nsfw/girls/lesbian", rating_score
+
+        if has_any(scored, ["1girl"], threshold) and has_any(scored, SEX_TAGS, threshold):
+            return "nsfw/girls/sex", rating_score
+
+        return "nsfw", rating_score
+
+    return "unsorted", rating_score
+
+# =============================
 # GUI
 # =============================
 
@@ -194,9 +196,6 @@ class App:
 
         ttk.Label(root, text="Tag Confidence Threshold").pack()
         ttk.Scale(root, from_=0.20, to=0.80, variable=self.threshold, orient="horizontal").pack(fill="x")
-
-        self.conf_label = ttk.Label(root, text="Confidence: -")
-        self.conf_label.pack()
 
         self.progress = ttk.Progressbar(root, mode="determinate")
         self.progress.pack(fill="x", padx=5, pady=5)
@@ -215,9 +214,16 @@ class App:
         self.folder.set(filedialog.askdirectory())
 
     def start_scan(self):
-        threading.Thread(target=self.process).start()
+        threading.Thread(target=self.safe_process, daemon=True).start()
+
+    def safe_process(self):
+        try:
+            self.process()
+        except Exception:
+            traceback.print_exc()
 
     def process(self):
+
         folder = self.folder.get()
         threshold = self.threshold.get()
 
@@ -234,34 +240,35 @@ class App:
         json_file = os.path.join(scan_log_dir, "results.json")
 
         logger = logging.getLogger(scan_time)
+        logger.handlers.clear()
         logger.setLevel(logging.INFO)
+
         handler = logging.FileHandler(log_file, encoding="utf-8")
         handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
         logger.addHandler(handler)
 
         results = []
+        seen_hashes = {}
 
         files = []
         for r, _, f in os.walk(folder):
             for file in f:
                 ext = os.path.splitext(file)[1].lower()
                 if ext in [".png",".jpg",".jpeg",".webp",".gif",".mp4",".webm"]:
-                    files.append(os.path.join(r, file))
+                    files.append(os.path.join(r,file))
 
         self.progress["maximum"] = len(files)
-        self.progress["value"] = 0
-
-        seen_hashes = {}
 
         for i, path in enumerate(files):
+
             file = os.path.basename(path)
             ext = os.path.splitext(file)[1].lower()
 
             try:
                 file_hash = hash_file(path)
                 if file_hash in seen_hashes:
-                    dest = os.path.join(folder, "duplicate", file)
-                    shutil.move(path, dest)
+                    dest = os.path.join(folder,"duplicate",file)
+                    shutil.move(path,dest)
                     logger.info(f"{file} → duplicate")
                     self.gui_log(f"{file} → duplicate")
                     continue
@@ -275,34 +282,44 @@ class App:
                     img = np.array(Image.open(path).convert("RGB"))
                     prediction = predict_image(img)
 
-                scored = list(zip(tags, prediction))
-                scored.sort(key=lambda x: x[1], reverse=True)
+                scored = list(zip(tags,prediction))
+                scored.sort(key=lambda x:x[1], reverse=True)
 
-                relative, confidence = determine_destination(scored, ext, threshold)
-                dest_folder = os.path.join(folder, relative)
-                dest_path = os.path.join(dest_folder, file)
+                relative, confidence = determine_destination(scored,ext,threshold)
 
-                shutil.move(path, dest_path)
-
-                results.append({
-                    "file": file,
-                    "destination": relative,
-                    "confidence": float(confidence)
-                })
+                dest_folder = os.path.join(folder,relative)
+                shutil.move(path, os.path.join(dest_folder,file))
 
                 logger.info(f"{file} → {relative} ({confidence:.3f})")
                 self.gui_log(f"{file} → {relative}")
-                self.conf_label.config(text=f"{confidence:.2f}")
+
+                results.append({
+                    "file":file,
+                    "destination":relative,
+                    "confidence":float(confidence)
+                })
 
             except Exception as e:
                 logger.error(f"{file} ERROR: {e}")
                 self.gui_log(f"{file} ERROR")
 
-            self.progress["value"] = i+1
+            self.progress["value"]=i+1
             self.root.update_idletasks()
 
-        with open(json_file, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=4)
+        with open(json_file,"w",encoding="utf-8") as f:
+            json.dump(results,f,indent=4)
 
         logger.info("SCAN COMPLETE")
+        handler.flush()
+        handler.close()
+
         self.gui_log("SCAN COMPLETE")
+
+# =============================
+# START
+# =============================
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
