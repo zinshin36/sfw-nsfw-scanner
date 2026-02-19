@@ -59,7 +59,6 @@ TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
 VIDEO_EXTENSIONS = [".gif", ".mp4", ".webm"]
 
-# Strong explicit tags
 EXPLICIT_TAGS = {
     "sex", "explicit", "penis", "vagina", "nipples",
     "breasts", "cum", "oral", "anal",
@@ -93,7 +92,7 @@ def load_model_once():
                 tags = [line.strip() for line in f.readlines()]
 
             model_loaded = True
-            logging.info("Model loaded.")
+            logging.info("Model loaded successfully.")
             return True
 
         except Exception:
@@ -125,6 +124,7 @@ def preprocess_frame(frame):
 
 def batch_predict(frames):
     processed = []
+
     for f in frames:
         p = preprocess_frame(f)
         if p is not None:
@@ -140,7 +140,7 @@ def batch_predict(frames):
     for prediction in preds:
         for i, val in enumerate(prediction):
             tag = tags[i]
-            combined[tag] = max(combined.get(tag, 0), val)
+            combined[tag] = max(combined.get(tag, 0), float(val))
 
     return combined
 
@@ -169,54 +169,67 @@ def extract_sampled_frames(path):
 # CLASSIFICATION
 # =========================
 
-def is_nsfw(tag_scores):
-
-    for tag in EXPLICIT_TAGS:
-        if tag_scores.get(tag, 0) >= 0.30:
-            return True
-
-    for tag in FORCE_NSFW_TAGS:
-        if tag_scores.get(tag, 0) >= 0.30:
-            return True
-
-    return False
-
 def classify(tag_scores, ext):
 
-    nsfw = is_nsfw(tag_scores)
     is_video = ext in VIDEO_EXTENSIONS
+    furry_score = tag_scores.get("furry", 0)
 
-    # =====================
+    # STRICT NSFW CHECK
+    nsfw = False
+
+    for tag in EXPLICIT_TAGS:
+        if tag_scores.get(tag, 0) >= 0.20:
+            nsfw = True
+            break
+
+    for tag in FORCE_NSFW_TAGS:
+        if tag_scores.get(tag, 0) >= 0.20:
+            nsfw = True
+            break
+
+    # ============================
     # NSFW ROUTING
-    # =====================
+    # ============================
     if nsfw:
 
         if is_video:
             return os.path.join("nsfw", "animated")
 
-        if tag_scores.get("yaoi", 0) >= 0.30:
+        if furry_score >= 0.30:
+            return os.path.join("nsfw", "furry", "sex")
+
+        yaoi_score = tag_scores.get("yaoi", 0)
+        lesbian_score = tag_scores.get("lesbian", 0)
+        boy_score = tag_scores.get("1boy", 0)
+        girl_score = tag_scores.get("1girl", 0)
+
+        if yaoi_score >= 0.25:
             return os.path.join("nsfw", "boys", "yaoi")
 
-        if tag_scores.get("lesbian", 0) >= 0.30:
+        if lesbian_score >= 0.25:
             return os.path.join("nsfw", "girls", "lesbian")
 
-        if tag_scores.get("1boy", 0) >= tag_scores.get("1girl", 0):
+        if boy_score > girl_score:
             return os.path.join("nsfw", "boys", "sex")
+
+        if girl_score > boy_score:
+            return os.path.join("nsfw", "girls", "sex")
 
         return os.path.join("nsfw", "girls", "sex")
 
-    # =====================
+    # ============================
     # SFW ROUTING
-    # =====================
+    # ============================
     else:
 
         if is_video:
             return os.path.join("sfw", "animated")
 
-        if tag_scores.get("furry", 0) >= 0.30:
+        if furry_score >= 0.30:
             return os.path.join("sfw", "furry")
 
-        return os.path.join("sfw", "furry") if tag_scores.get("furry", 0) >= 0.30 else os.path.join("sfw", "animated")
+        # DEFAULT SFW IMAGE DESTINATION
+        return os.path.join("sfw", "furry")
 
 # =========================
 # STRUCTURE
@@ -279,7 +292,9 @@ def scan_folder(folder):
                 frames = extract_sampled_frames(file_path)
                 tag_scores = batch_predict(frames)
             else:
-                frame = cv2.imread(file_path)
+                # Unicode safe image loading
+                file_bytes = np.fromfile(file_path, dtype=np.uint8)
+                frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
                 tag_scores = batch_predict([frame])
 
             destination = classify(tag_scores, ext)
