@@ -4,23 +4,27 @@ import shutil
 import threading
 import logging
 import traceback
+import hashlib
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-from PIL import Image
 import cv2
 
 # =========================
-# LOGGING SETUP
+# BASE PATH (PyInstaller Safe)
 # =========================
 
-BASE_RUNTIME_PATH = os.path.abspath(".")
-
 if hasattr(sys, "_MEIPASS"):
-    BASE_RUNTIME_PATH = sys._MEIPASS
+    BASE_PATH = sys._MEIPASS
+else:
+    BASE_PATH = os.path.abspath(".")
+
+# =========================
+# LOGGING
+# =========================
 
 LOG_DIR = os.path.join(os.getcwd(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -31,14 +35,14 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-logging.info("Application starting...")
+logging.info("===== APPLICATION STARTED =====")
 
 # =========================
 # MODEL PATHS
 # =========================
 
-MODEL_PATH = os.path.join(BASE_RUNTIME_PATH, "model", "model-resnet_custom_v3.h5")
-TAGS_PATH = os.path.join(BASE_RUNTIME_PATH, "model", "tags.txt")
+MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
+TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
 
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
 VIDEO_EXTENSIONS = [".gif", ".mp4", ".webm"]
@@ -49,6 +53,13 @@ model = None
 tags = []
 model_loaded = False
 model_lock = threading.Lock()
+
+# =========================
+# DUPLICATE HASH STORAGE
+# =========================
+
+seen_hashes = set()
+hash_lock = threading.Lock()
 
 # =========================
 # LOAD MODEL
@@ -69,51 +80,53 @@ def load_model_once():
                 tags = [line.strip() for line in f.readlines()]
 
             model_loaded = True
-            logging.info(f"Model loaded with {len(tags)} tags")
+            logging.info(f"Model loaded ({len(tags)} tags)")
             return True
 
-        except Exception as e:
+        except Exception:
             logging.error(traceback.format_exc())
-            messagebox.showerror("Model Error", str(e))
+            messagebox.showerror("Model Error", "Failed to load model. Check logs.")
             return False
 
+# =========================
+# HASHING (Duplicate Detection)
+# =========================
+
+def file_hash(path):
+    sha = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 # =========================
-# PREPROCESS IMAGE
+# IMAGE PREDICTION
 # =========================
 
-def preprocess_array(img_array):
-    img_array = cv2.resize(img_array, (512, 512))
-    img_array = img_array / 255.0
-    return np.expand_dims(img_array, axis=0)
+def preprocess_frame(frame):
+    frame = cv2.resize(frame, (512, 512))
+    frame = frame / 255.0
+    return np.expand_dims(frame, axis=0)
 
-
-def predict_array(img_array):
-    processed = preprocess_array(img_array)
+def predict_frame(frame):
+    processed = preprocess_frame(frame)
     predictions = model.predict(processed, verbose=0)[0]
     return dict(zip(tags, predictions))
 
-
 # =========================
-# VIDEO/GIF FRAME EXTRACT (FIRST 10 SECONDS)
+# VIDEO FRAME EXTRACTION
 # =========================
 
 def extract_frames(path):
 
-    frames = []
-
-    if path.lower().endswith(".gif"):
-        cap = cv2.VideoCapture(path)
-    else:
-        cap = cv2.VideoCapture(path)
-
+    cap = cv2.VideoCapture(path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = 24
 
     max_frames = int(fps * 10)
-
     count = 0
+    frames = []
 
     while cap.isOpened() and count < max_frames:
         ret, frame = cap.read()
@@ -123,12 +136,10 @@ def extract_frames(path):
         count += 1
 
     cap.release()
-
     return frames
 
-
 # =========================
-# CLASSIFICATION LOGIC
+# CLASSIFICATION
 # =========================
 
 def classify(tag_scores):
@@ -136,7 +147,7 @@ def classify(tag_scores):
     def score(tag):
         return tag_scores.get(tag, 0)
 
-    # Force NSFW override
+    # Forced NSFW override
     for tag in FORCE_NSFW_TAGS:
         if score(tag) >= 0.35:
             return os.path.join("nsfw", "girls", "sex")
@@ -167,9 +178,8 @@ def classify(tag_scores):
 
     return os.path.join("sfw", "animated")
 
-
 # =========================
-# FOLDER STRUCTURE
+# STRUCTURE
 # =========================
 
 def create_structure(base):
@@ -186,6 +196,7 @@ def create_structure(base):
     os.makedirs(os.path.join(base, "nsfw", "furry", "sex"), exist_ok=True)
     os.makedirs(os.path.join(base, "nsfw", "animated"), exist_ok=True)
 
+    os.makedirs(os.path.join(base, "duplicates"), exist_ok=True)
 
 # =========================
 # SCAN
@@ -200,7 +211,11 @@ def scan_folder(folder):
 
     files = []
 
+    skip_dirs = {"sfw", "nsfw", "duplicates"}
+
     for root_dir, dirs, filenames in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+
         for file in filenames:
             ext = os.path.splitext(file)[1].lower()
             if ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS:
@@ -212,22 +227,31 @@ def scan_folder(folder):
     for idx, file_path in enumerate(files):
 
         try:
+            # Duplicate detection
+            hash_value = file_hash(file_path)
+
+            with hash_lock:
+                if hash_value in seen_hashes:
+                    dest = os.path.join(folder, "duplicates")
+                    shutil.move(file_path, os.path.join(dest, os.path.basename(file_path)))
+                    logging.info(f"DUPLICATE: {file_path}")
+                    continue
+                else:
+                    seen_hashes.add(hash_value)
+
             ext = os.path.splitext(file_path)[1].lower()
 
             if ext in IMAGE_EXTENSIONS:
-                img = cv2.imread(file_path)
-                tag_scores = predict_array(img)
-
+                frame = cv2.imread(file_path)
+                tag_scores = predict_frame(frame)
             else:
                 frames = extract_frames(file_path)
-                combined_scores = {}
-
+                combined = {}
                 for frame in frames:
-                    scores = predict_array(frame)
+                    scores = predict_frame(frame)
                     for k, v in scores.items():
-                        combined_scores[k] = max(combined_scores.get(k, 0), v)
-
-                tag_scores = combined_scores
+                        combined[k] = max(combined.get(k, 0), v)
+                tag_scores = combined
 
             destination = classify(tag_scores)
             target_dir = os.path.join(folder, destination)
@@ -236,8 +260,8 @@ def scan_folder(folder):
 
             logging.info(f"MOVED: {file_path} → {destination}")
 
-            current_file_label.config(text=f"Moving: {os.path.basename(file_path)}")
-            destination_label.config(text=f"To: {destination}")
+            current_file_label.config(text=f"File: {os.path.basename(file_path)}")
+            destination_label.config(text=f"Destination: {destination}")
 
         except Exception:
             logging.error(traceback.format_exc())
@@ -245,9 +269,8 @@ def scan_folder(folder):
         progress_bar["value"] = idx + 1
         progress_label.config(text=f"{idx+1}/{total}")
 
-    messagebox.showinfo("Done", "Scan Complete.")
     logging.info("Scan completed.")
-
+    messagebox.showinfo("Done", "Scan Complete.")
 
 # =========================
 # GUI
@@ -257,9 +280,7 @@ def start_scan():
     folder = filedialog.askdirectory()
     if not folder:
         return
-
     threading.Thread(target=scan_folder, args=(folder,), daemon=True).start()
-
 
 root = tk.Tk()
 root.title("Media Auto Sorter")
@@ -273,10 +294,10 @@ progress_bar.pack(pady=10)
 progress_label = tk.Label(root, text="0/0")
 progress_label.pack()
 
-current_file_label = tk.Label(root, text="Current File: ")
+current_file_label = tk.Label(root, text="File:")
 current_file_label.pack(pady=5)
 
-destination_label = tk.Label(root, text="Destination: ")
+destination_label = tk.Label(root, text="Destination:")
 destination_label.pack(pady=5)
 
 root.mainloop()
