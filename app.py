@@ -22,12 +22,11 @@ if gpus:
     try:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
-        logging.info("GPU detected and enabled.")
     except:
         pass
 
 # =========================
-# BASE PATH
+# BASE PATH (PyInstaller Safe)
 # =========================
 
 if hasattr(sys, "_MEIPASS"):
@@ -51,7 +50,7 @@ logging.basicConfig(
 logging.info("===== APPLICATION STARTED =====")
 
 # =========================
-# MODEL
+# MODEL PATHS
 # =========================
 
 MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
@@ -60,13 +59,19 @@ TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
 VIDEO_EXTENSIONS = [".gif", ".mp4", ".webm"]
 
+# Strong explicit tags
+EXPLICIT_TAGS = {
+    "sex", "explicit", "penis", "vagina", "nipples",
+    "breasts", "cum", "oral", "anal",
+    "masturbation", "nude"
+}
+
 FORCE_NSFW_TAGS = {"bulge", "bikini", "frilled_bikini", "swimsuit"}
 
 model = None
 tags = []
 model_loaded = False
 model_lock = threading.Lock()
-
 seen_hashes = set()
 
 # =========================
@@ -140,7 +145,7 @@ def batch_predict(frames):
     return combined
 
 # =========================
-# VIDEO FRAME SAMPLING
+# VIDEO SAMPLING (1 frame per second, 10 seconds)
 # =========================
 
 def extract_sampled_frames(path):
@@ -151,8 +156,7 @@ def extract_sampled_frames(path):
         fps = 24
 
     frames = []
-    duration_limit = 10
-    for second in range(duration_limit):
+    for second in range(10):
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(second * fps))
         ret, frame = cap.read()
         if ret and frame is not None:
@@ -162,43 +166,57 @@ def extract_sampled_frames(path):
     return frames
 
 # =========================
-# CLASSIFY
+# CLASSIFICATION
 # =========================
 
-def classify(tag_scores, is_video):
+def is_nsfw(tag_scores):
 
-    def score(tag):
-        return tag_scores.get(tag, 0)
+    for tag in EXPLICIT_TAGS:
+        if tag_scores.get(tag, 0) >= 0.30:
+            return True
 
-    explicit_score = score("explicit") or score("sex")
-
-    # Force override
     for tag in FORCE_NSFW_TAGS:
-        if score(tag) >= 0.35:
-            return os.path.join("nsfw", "animated" if is_video else "girls/sex")
+        if tag_scores.get(tag, 0) >= 0.30:
+            return True
 
-    if explicit_score >= 0.30:
-        if score("yaoi") >= 0.30:
+    return False
+
+def classify(tag_scores, ext):
+
+    nsfw = is_nsfw(tag_scores)
+    is_video = ext in VIDEO_EXTENSIONS
+
+    # =====================
+    # NSFW ROUTING
+    # =====================
+    if nsfw:
+
+        if is_video:
+            return os.path.join("nsfw", "animated")
+
+        if tag_scores.get("yaoi", 0) >= 0.30:
             return os.path.join("nsfw", "boys", "yaoi")
-        if score("lesbian") >= 0.30:
+
+        if tag_scores.get("lesbian", 0) >= 0.30:
             return os.path.join("nsfw", "girls", "lesbian")
-        if score("1boy") >= score("1girl"):
+
+        if tag_scores.get("1boy", 0) >= tag_scores.get("1girl", 0):
             return os.path.join("nsfw", "boys", "sex")
+
         return os.path.join("nsfw", "girls", "sex")
 
-    # Videos always go animated branch
-    if is_video:
-        if explicit_score >= 0.25:
-            return os.path.join("nsfw", "animated")
-        return os.path.join("sfw", "animated")
+    # =====================
+    # SFW ROUTING
+    # =====================
+    else:
 
-    if score("furry") >= 0.35:
-        return os.path.join("sfw", "furry")
+        if is_video:
+            return os.path.join("sfw", "animated")
 
-    if score("animated") >= 0.20:
-        return os.path.join("sfw", "animated")
+        if tag_scores.get("furry", 0) >= 0.30:
+            return os.path.join("sfw", "furry")
 
-    return os.path.join("sfw", "animated")
+        return os.path.join("sfw", "furry") if tag_scores.get("furry", 0) >= 0.30 else os.path.join("sfw", "animated")
 
 # =========================
 # STRUCTURE
@@ -256,24 +274,23 @@ def scan_folder(folder):
             seen_hashes.add(hash_value)
 
             ext = os.path.splitext(file_path)[1].lower()
-            is_video = ext in VIDEO_EXTENSIONS
 
-            if is_video:
+            if ext in VIDEO_EXTENSIONS:
                 frames = extract_sampled_frames(file_path)
                 tag_scores = batch_predict(frames)
             else:
                 frame = cv2.imread(file_path)
                 tag_scores = batch_predict([frame])
 
-            destination = classify(tag_scores, is_video)
+            destination = classify(tag_scores, ext)
             target_dir = os.path.join(folder, destination)
 
             shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
 
             logging.info(f"MOVED: {file_path} → {destination}")
 
-            current_file_label.config(text=f"{os.path.basename(file_path)}")
-            destination_label.config(text=f"{destination}")
+            current_file_label.config(text=os.path.basename(file_path))
+            destination_label.config(text=destination)
 
         except Exception:
             logging.error(traceback.format_exc())
