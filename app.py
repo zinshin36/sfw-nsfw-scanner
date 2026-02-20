@@ -1,4 +1,7 @@
 import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
 import sys
 import shutil
 import threading
@@ -10,6 +13,8 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
 import tensorflow as tf
+tf.get_logger().setLevel("ERROR")
+
 from tensorflow.keras.models import load_model
 import cv2
 
@@ -26,7 +31,7 @@ if gpus:
         pass
 
 # =========================
-# BASE PATH (PyInstaller Safe)
+# BASE PATH
 # =========================
 
 if hasattr(sys, "_MEIPASS"):
@@ -50,7 +55,7 @@ logging.basicConfig(
 logging.info("===== APPLICATION STARTED =====")
 
 # =========================
-# MODEL PATHS
+# MODEL
 # =========================
 
 MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
@@ -85,14 +90,11 @@ def load_model_once():
             return True
 
         try:
-            logging.info("Loading model...")
             model = load_model(MODEL_PATH, compile=False)
-
             with open(TAGS_PATH, "r", encoding="utf-8") as f:
                 tags = [line.strip() for line in f.readlines()]
-
             model_loaded = True
-            logging.info("Model loaded successfully.")
+            logging.info("Model loaded.")
             return True
 
         except Exception:
@@ -101,7 +103,7 @@ def load_model_once():
             return False
 
 # =========================
-# DUPLICATE HASH
+# HASH
 # =========================
 
 def file_hash(path):
@@ -116,15 +118,15 @@ def file_hash(path):
 # =========================
 
 def preprocess_frame(frame):
-    if frame is None or frame.size == 0:
+    if frame is None:
         return None
     frame = cv2.resize(frame, (512, 512))
     frame = frame / 255.0
     return frame
 
 def batch_predict(frames):
-    processed = []
 
+    processed = []
     for f in frames:
         p = preprocess_frame(f)
         if p is not None:
@@ -139,17 +141,15 @@ def batch_predict(frames):
     combined = {}
     for prediction in preds:
         for i, val in enumerate(prediction):
-            tag = tags[i]
-            combined[tag] = max(combined.get(tag, 0), float(val))
+            combined[tags[i]] = max(combined.get(tags[i], 0), float(val))
 
     return combined
 
 # =========================
-# VIDEO SAMPLING (1 frame per second, 10 seconds)
+# VIDEO FRAMES
 # =========================
 
 def extract_sampled_frames(path):
-
     cap = cv2.VideoCapture(path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
@@ -159,84 +159,84 @@ def extract_sampled_frames(path):
     for second in range(10):
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(second * fps))
         ret, frame = cap.read()
-        if ret and frame is not None:
+        if ret:
             frames.append(frame)
 
     cap.release()
     return frames
 
 # =========================
-# CLASSIFICATION
+# STRICT CLASSIFIER
 # =========================
+
+def is_explicit(tag_scores):
+
+    for tag in EXPLICIT_TAGS:
+        if tag_scores.get(tag, 0) >= 0.18:
+            return True
+
+    for tag in FORCE_NSFW_TAGS:
+        if tag_scores.get(tag, 0) >= 0.18:
+            return True
+
+    return False
+
 
 def classify(tag_scores, ext):
 
     is_video = ext in VIDEO_EXTENSIONS
-    furry_score = tag_scores.get("furry", 0)
+    furry = tag_scores.get("furry", 0)
 
-    # STRICT NSFW CHECK
-    nsfw = False
+    boy = tag_scores.get("1boy", 0)
+    girl = tag_scores.get("1girl", 0)
+    yaoi = tag_scores.get("yaoi", 0)
+    lesbian = tag_scores.get("lesbian", 0)
 
-    for tag in EXPLICIT_TAGS:
-        if tag_scores.get(tag, 0) >= 0.20:
-            nsfw = True
-            break
+    nsfw = is_explicit(tag_scores)
 
-    for tag in FORCE_NSFW_TAGS:
-        if tag_scores.get(tag, 0) >= 0.20:
-            nsfw = True
-            break
-
-    # ============================
-    # NSFW ROUTING
-    # ============================
+    # ======================
+    # NSFW
+    # ======================
     if nsfw:
 
         if is_video:
-            return os.path.join("nsfw", "animated")
+            return "nsfw/animated"
 
-        if furry_score >= 0.30:
-            return os.path.join("nsfw", "furry", "sex")
+        if furry >= 0.40:
+            return "nsfw/furry/sex"
 
-        yaoi_score = tag_scores.get("yaoi", 0)
-        lesbian_score = tag_scores.get("lesbian", 0)
-        boy_score = tag_scores.get("1boy", 0)
-        girl_score = tag_scores.get("1girl", 0)
+        if yaoi >= 0.35 and boy > girl:
+            return "nsfw/boys/yaoi"
 
-        if yaoi_score >= 0.25:
-            return os.path.join("nsfw", "boys", "yaoi")
+        if lesbian >= 0.35 and girl > boy:
+            return "nsfw/girls/lesbian"
 
-        if lesbian_score >= 0.25:
-            return os.path.join("nsfw", "girls", "lesbian")
+        if boy > girl + 0.15:
+            return "nsfw/boys/sex"
 
-        if boy_score > girl_score:
-            return os.path.join("nsfw", "boys", "sex")
+        if girl > boy + 0.15:
+            return "nsfw/girls/sex"
 
-        if girl_score > boy_score:
-            return os.path.join("nsfw", "girls", "sex")
+        return "nsfw/girls/sex"
 
-        return os.path.join("nsfw", "girls", "sex")
-
-    # ============================
-    # SFW ROUTING
-    # ============================
+    # ======================
+    # SFW
+    # ======================
     else:
 
         if is_video:
-            return os.path.join("sfw", "animated")
+            return "sfw/animated"
 
-        if furry_score >= 0.30:
-            return os.path.join("sfw", "furry")
+        if furry >= 0.40:
+            return "sfw/furry"
 
-        # DEFAULT SFW IMAGE DESTINATION
-        return os.path.join("sfw", "furry")
+        return "sfw/furry"
 
 # =========================
 # STRUCTURE
 # =========================
 
 def create_structure(base):
-
     paths = [
         "sfw/furry",
         "sfw/animated",
@@ -248,7 +248,6 @@ def create_structure(base):
         "nsfw/animated",
         "duplicates"
     ]
-
     for p in paths:
         os.makedirs(os.path.join(base, p), exist_ok=True)
 
@@ -268,7 +267,6 @@ def scan_folder(folder):
 
     for root_dir, dirs, filenames in os.walk(folder):
         dirs[:] = [d for d in dirs if d not in skip_dirs]
-
         for file in filenames:
             ext = os.path.splitext(file)[1].lower()
             if ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS:
@@ -292,7 +290,6 @@ def scan_folder(folder):
                 frames = extract_sampled_frames(file_path)
                 tag_scores = batch_predict(frames)
             else:
-                # Unicode safe image loading
                 file_bytes = np.fromfile(file_path, dtype=np.uint8)
                 frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
                 tag_scores = batch_predict([frame])
@@ -313,7 +310,6 @@ def scan_folder(folder):
         progress_bar["value"] = idx + 1
         progress_label.config(text=f"{idx+1}/{total}")
 
-    logging.info("Scan completed.")
     messagebox.showinfo("Done", "Scan Complete")
 
 # =========================
@@ -322,9 +318,8 @@ def scan_folder(folder):
 
 def start_scan():
     folder = filedialog.askdirectory()
-    if not folder:
-        return
-    threading.Thread(target=scan_folder, args=(folder,), daemon=True).start()
+    if folder:
+        threading.Thread(target=scan_folder, args=(folder,), daemon=True).start()
 
 root = tk.Tk()
 root.title("Media Auto Sorter")
