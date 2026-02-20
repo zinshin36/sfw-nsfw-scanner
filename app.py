@@ -19,25 +19,19 @@ from tensorflow.keras.models import load_model
 import cv2
 
 # =========================
-# GPU AUTO DETECT
-# =========================
-
-gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except:
-        pass
-
-# =========================
-# BASE PATH
+# PATHS
 # =========================
 
 if hasattr(sys, "_MEIPASS"):
     BASE_PATH = sys._MEIPASS
 else:
     BASE_PATH = os.path.abspath(".")
+
+MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
+TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
+
+IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
+VIDEO_EXTENSIONS = [".gif", ".mp4", ".webm"]
 
 # =========================
 # LOGGING
@@ -52,25 +46,20 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-logging.info("===== APPLICATION STARTED =====")
+# =========================
+# TAG RULES
+# =========================
+
+EXPLICIT_TAGS = {
+    "sex","explicit","penis","vagina","nipples",
+    "breasts","cum","oral","anal","masturbation","nude"
+}
+
+FORCE_NSFW_TAGS = {"bulge","bikini","frilled_bikini","swimsuit"}
 
 # =========================
 # MODEL
 # =========================
-
-MODEL_PATH = os.path.join(BASE_PATH, "model", "model-resnet_custom_v3.h5")
-TAGS_PATH = os.path.join(BASE_PATH, "model", "tags.txt")
-
-IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
-VIDEO_EXTENSIONS = [".gif", ".mp4", ".webm"]
-
-EXPLICIT_TAGS = {
-    "sex", "explicit", "penis", "vagina", "nipples",
-    "breasts", "cum", "oral", "anal",
-    "masturbation", "nude"
-}
-
-FORCE_NSFW_TAGS = {"bulge", "bikini", "frilled_bikini", "swimsuit"}
 
 model = None
 tags = []
@@ -78,25 +67,18 @@ model_loaded = False
 model_lock = threading.Lock()
 seen_hashes = set()
 
-# =========================
-# LOAD MODEL
-# =========================
-
 def load_model_once():
     global model, tags, model_loaded
 
     with model_lock:
         if model_loaded:
             return True
-
         try:
             model = load_model(MODEL_PATH, compile=False)
             with open(TAGS_PATH, "r", encoding="utf-8") as f:
                 tags = [line.strip() for line in f.readlines()]
             model_loaded = True
-            logging.info("Model loaded.")
             return True
-
         except Exception:
             logging.error(traceback.format_exc())
             messagebox.showerror("Model Error", "Failed to load model.")
@@ -114,51 +96,49 @@ def file_hash(path):
     return sha.hexdigest()
 
 # =========================
-# PREDICTION
+# PREDICT
 # =========================
 
-def preprocess_frame(frame):
+def preprocess(frame):
     if frame is None:
         return None
-    frame = cv2.resize(frame, (512, 512))
-    frame = frame / 255.0
-    return frame
+    frame = cv2.resize(frame, (512,512))
+    return frame/255.0
 
 def batch_predict(frames):
 
     processed = []
     for f in frames:
-        p = preprocess_frame(f)
+        p = preprocess(f)
         if p is not None:
             processed.append(p)
 
     if not processed:
         return {}
 
-    batch = np.array(processed)
-    preds = model.predict(batch, verbose=0)
+    preds = model.predict(np.array(processed), verbose=0)
 
     combined = {}
-    for prediction in preds:
-        for i, val in enumerate(prediction):
-            combined[tags[i]] = max(combined.get(tags[i], 0), float(val))
+    for pred in preds:
+        for i,val in enumerate(pred):
+            combined[tags[i]] = max(combined.get(tags[i],0), float(val))
 
     return combined
 
 # =========================
-# VIDEO FRAMES
+# VIDEO SAMPLE
 # =========================
 
-def extract_sampled_frames(path):
+def extract_frames(path):
     cap = cv2.VideoCapture(path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = 24
 
-    frames = []
-    for second in range(10):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(second * fps))
-        ret, frame = cap.read()
+    frames=[]
+    for sec in range(10):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(sec*fps))
+        ret,frame = cap.read()
         if ret:
             frames.append(frame)
 
@@ -169,68 +149,68 @@ def extract_sampled_frames(path):
 # STRICT CLASSIFIER
 # =========================
 
-def is_explicit(tag_scores):
+def is_nsfw(scores):
 
     for tag in EXPLICIT_TAGS:
-        if tag_scores.get(tag, 0) >= 0.18:
+        if scores.get(tag,0) >= 0.15:
             return True
 
     for tag in FORCE_NSFW_TAGS:
-        if tag_scores.get(tag, 0) >= 0.18:
+        if scores.get(tag,0) >= 0.15:
             return True
 
     return False
 
 
-def classify(tag_scores, ext):
+def classify(scores, ext):
 
     is_video = ext in VIDEO_EXTENSIONS
-    furry = tag_scores.get("furry", 0)
 
-    boy = tag_scores.get("1boy", 0)
-    girl = tag_scores.get("1girl", 0)
-    yaoi = tag_scores.get("yaoi", 0)
-    lesbian = tag_scores.get("lesbian", 0)
+    furry = scores.get("furry",0)
+    boy   = scores.get("1boy",0)
+    girl  = scores.get("1girl",0)
+    yaoi  = scores.get("yaoi",0)
+    lesbian = scores.get("lesbian",0)
 
-    nsfw = is_explicit(tag_scores)
+    nsfw = is_nsfw(scores)
 
     # ======================
-    # NSFW
+    # NSFW STRICT
     # ======================
     if nsfw:
 
         if is_video:
             return "nsfw/animated"
 
-        if furry >= 0.40:
+        if furry >= 0.50:
             return "nsfw/furry/sex"
 
-        if yaoi >= 0.35 and boy > girl:
+        if yaoi >= 0.40 and boy >= 0.45 and boy > girl + 0.25:
             return "nsfw/boys/yaoi"
 
-        if lesbian >= 0.35 and girl > boy:
+        if lesbian >= 0.40 and girl >= 0.45 and girl > boy + 0.25:
             return "nsfw/girls/lesbian"
 
-        if boy > girl + 0.15:
+        if boy >= 0.45 and boy > girl + 0.25:
             return "nsfw/boys/sex"
 
-        if girl > boy + 0.15:
+        if girl >= 0.45 and girl > boy + 0.25:
             return "nsfw/girls/sex"
 
         return "nsfw/girls/sex"
 
     # ======================
-    # SFW
+    # SFW STRICT
     # ======================
     else:
 
         if is_video:
             return "sfw/animated"
 
-        if furry >= 0.40:
+        if furry >= 0.50:
             return "sfw/furry"
 
-        return "sfw/furry"
+        return "sfw"
 
 # =========================
 # STRUCTURE
@@ -238,6 +218,7 @@ def classify(tag_scores, ext):
 
 def create_structure(base):
     paths = [
+        "sfw",
         "sfw/furry",
         "sfw/animated",
         "nsfw/boys/yaoi",
@@ -249,94 +230,92 @@ def create_structure(base):
         "duplicates"
     ]
     for p in paths:
-        os.makedirs(os.path.join(base, p), exist_ok=True)
+        os.makedirs(os.path.join(base,p), exist_ok=True)
 
 # =========================
 # SCAN
 # =========================
 
-def scan_folder(folder):
+def scan(folder):
 
     if not load_model_once():
         return
 
     create_structure(folder)
 
-    files = []
-    skip_dirs = {"sfw", "nsfw", "duplicates"}
+    files=[]
+    skip={"sfw","nsfw","duplicates"}
 
-    for root_dir, dirs, filenames in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
-        for file in filenames:
-            ext = os.path.splitext(file)[1].lower()
+    for root_dir,dirs,filenames in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in skip]
+        for f in filenames:
+            ext=os.path.splitext(f)[1].lower()
             if ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS:
-                files.append(os.path.join(root_dir, file))
+                files.append(os.path.join(root_dir,f))
 
-    total = len(files)
-    progress_bar["maximum"] = total
+    total=len(files)
+    progress_bar["maximum"]=total
 
-    for idx, file_path in enumerate(files):
+    for i,path in enumerate(files):
 
         try:
-            hash_value = file_hash(file_path)
-            if hash_value in seen_hashes:
-                shutil.move(file_path, os.path.join(folder, "duplicates", os.path.basename(file_path)))
+            h=file_hash(path)
+            if h in seen_hashes:
+                shutil.move(path, os.path.join(folder,"duplicates",os.path.basename(path)))
                 continue
-            seen_hashes.add(hash_value)
+            seen_hashes.add(h)
 
-            ext = os.path.splitext(file_path)[1].lower()
+            ext=os.path.splitext(path)[1].lower()
 
             if ext in VIDEO_EXTENSIONS:
-                frames = extract_sampled_frames(file_path)
-                tag_scores = batch_predict(frames)
+                frames=extract_frames(path)
+                scores=batch_predict(frames)
             else:
-                file_bytes = np.fromfile(file_path, dtype=np.uint8)
-                frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-                tag_scores = batch_predict([frame])
+                bytes=np.fromfile(path,dtype=np.uint8)
+                img=cv2.imdecode(bytes,cv2.IMREAD_COLOR)
+                scores=batch_predict([img])
 
-            destination = classify(tag_scores, ext)
-            target_dir = os.path.join(folder, destination)
+            dest=classify(scores,ext)
+            target=os.path.join(folder,dest)
 
-            shutil.move(file_path, os.path.join(target_dir, os.path.basename(file_path)))
+            shutil.move(path, os.path.join(target,os.path.basename(path)))
 
-            logging.info(f"MOVED: {file_path} → {destination}")
+            current_file_label.config(text=os.path.basename(path))
+            destination_label.config(text=dest)
 
-            current_file_label.config(text=os.path.basename(file_path))
-            destination_label.config(text=destination)
-
-        except Exception:
+        except:
             logging.error(traceback.format_exc())
 
-        progress_bar["value"] = idx + 1
-        progress_label.config(text=f"{idx+1}/{total}")
+        progress_bar["value"]=i+1
+        progress_label.config(text=f"{i+1}/{total}")
 
-    messagebox.showinfo("Done", "Scan Complete")
+    messagebox.showinfo("Done","Scan Complete")
 
 # =========================
 # GUI
 # =========================
 
-def start_scan():
-    folder = filedialog.askdirectory()
+def start():
+    folder=filedialog.askdirectory()
     if folder:
-        threading.Thread(target=scan_folder, args=(folder,), daemon=True).start()
+        threading.Thread(target=scan,args=(folder,),daemon=True).start()
 
-root = tk.Tk()
-root.title("Media Auto Sorter")
+root=tk.Tk()
+root.title("Media Auto Sorter STRICT")
 root.geometry("600x350")
 
-tk.Button(root, text="Select Folder & Scan", command=start_scan).pack(pady=10)
+tk.Button(root,text="Select Folder & Scan",command=start).pack(pady=10)
 
-progress_bar = ttk.Progressbar(root, length=500)
+progress_bar=ttk.Progressbar(root,length=500)
 progress_bar.pack(pady=10)
 
-progress_label = tk.Label(root, text="0/0")
+progress_label=tk.Label(root,text="0/0")
 progress_label.pack()
 
-current_file_label = tk.Label(root, text="")
+current_file_label=tk.Label(root,text="")
 current_file_label.pack(pady=5)
 
-destination_label = tk.Label(root, text="")
+destination_label=tk.Label(root,text="")
 destination_label.pack(pady=5)
 
 root.mainloop()
