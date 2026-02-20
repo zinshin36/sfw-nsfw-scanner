@@ -47,15 +47,33 @@ logging.basicConfig(
 )
 
 # =========================
-# TAG RULES
+# STRICT RULE TAG GROUPS
 # =========================
 
-EXPLICIT_TAGS = {
-    "sex","explicit","penis","vagina","nipples",
-    "breasts","cum","oral","anal","masturbation","nude"
+ALWAYS_NSFW = {
+    "bottomless","trembling","midriff","underwear",
+    "large_breasts","nipples","nude",
+    "thighhighs","choker"
 }
 
-FORCE_NSFW_TAGS = {"bulge","bikini","frilled_bikini","swimsuit"}
+GIRLS_NSFW = {"pussy","vaginal","small_breasts"}
+BOYS_NSFW = {"penis"}
+
+ALWAYS_FURRY = {
+    "animal_ears","dog_ears","fox_ears","fox_girl",
+    "fox_tail","raccoon_ears","raccoon_tail",
+    "tail","cat_ears","colored_skin"
+}
+
+YAoi_FORCE = {
+    "yaoi","male_focus","otoko_no_ko",
+    "trap","crossdressing"
+}
+
+LESBIAN_FORCE = {"futanari"}
+
+RATING_SAFE = "rating:safe"
+RATING_EXPLICIT = "rating:explicit"
 
 # =========================
 # MODEL
@@ -69,7 +87,6 @@ seen_hashes = set()
 
 def load_model_once():
     global model, tags, model_loaded
-
     with model_lock:
         if model_loaded:
             return True
@@ -96,7 +113,7 @@ def file_hash(path):
     return sha.hexdigest()
 
 # =========================
-# PREDICT
+# PREDICTION
 # =========================
 
 def preprocess(frame):
@@ -106,23 +123,18 @@ def preprocess(frame):
     return frame/255.0
 
 def batch_predict(frames):
-
-    processed = []
+    processed=[]
     for f in frames:
-        p = preprocess(f)
+        p=preprocess(f)
         if p is not None:
             processed.append(p)
-
     if not processed:
         return {}
-
-    preds = model.predict(np.array(processed), verbose=0)
-
-    combined = {}
+    preds=model.predict(np.array(processed),verbose=0)
+    combined={}
     for pred in preds:
         for i,val in enumerate(pred):
-            combined[tags[i]] = max(combined.get(tags[i],0), float(val))
-
+            combined[tags[i]]=max(combined.get(tags[i],0),float(val))
     return combined
 
 # =========================
@@ -130,86 +142,91 @@ def batch_predict(frames):
 # =========================
 
 def extract_frames(path):
-    cap = cv2.VideoCapture(path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0:
-        fps = 24
-
+    cap=cv2.VideoCapture(path)
+    fps=cap.get(cv2.CAP_PROP_FPS)
+    if fps<=0: fps=24
     frames=[]
     for sec in range(10):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(sec*fps))
-        ret,frame = cap.read()
+        cap.set(cv2.CAP_PROP_POS_FRAMES,int(sec*fps))
+        ret,frame=cap.read()
         if ret:
             frames.append(frame)
-
     cap.release()
     return frames
 
 # =========================
-# STRICT CLASSIFIER
+# STRICT PRIORITY CLASSIFIER
 # =========================
 
-def is_nsfw(scores):
-
-    for tag in EXPLICIT_TAGS:
-        if scores.get(tag,0) >= 0.15:
-            return True
-
-    for tag in FORCE_NSFW_TAGS:
-        if scores.get(tag,0) >= 0.15:
-            return True
-
-    return False
+def tag_present(scores, tag, threshold=0.20):
+    return scores.get(tag,0) >= threshold
 
 
 def classify(scores, ext):
 
     is_video = ext in VIDEO_EXTENSIONS
 
-    furry = scores.get("furry",0)
-    boy   = scores.get("1boy",0)
-    girl  = scores.get("1girl",0)
-    yaoi  = scores.get("yaoi",0)
-    lesbian = scores.get("lesbian",0)
+    # ===== 1. RATING OVERRIDES =====
+    if tag_present(scores, RATING_EXPLICIT, 0.10):
+        nsfw = True
+    elif tag_present(scores, RATING_SAFE, 0.60):
+        nsfw = False
+    else:
+        nsfw = False
 
-    nsfw = is_nsfw(scores)
+    # ===== 2. FORCE NSFW TAGS =====
+    for tag in ALWAYS_NSFW:
+        if tag_present(scores, tag):
+            nsfw = True
 
-    # ======================
-    # NSFW STRICT
-    # ======================
-    if nsfw:
-
-        if is_video:
-            return "nsfw/animated"
-
-        if furry >= 0.50:
-            return "nsfw/furry/sex"
-
-        if yaoi >= 0.40 and boy >= 0.45 and boy > girl + 0.25:
-            return "nsfw/boys/yaoi"
-
-        if lesbian >= 0.40 and girl >= 0.45 and girl > boy + 0.25:
-            return "nsfw/girls/lesbian"
-
-        if boy >= 0.45 and boy > girl + 0.25:
-            return "nsfw/boys/sex"
-
-        if girl >= 0.45 and girl > boy + 0.25:
+    for tag in GIRLS_NSFW:
+        if tag_present(scores, tag):
             return "nsfw/girls/sex"
 
+    for tag in BOYS_NSFW:
+        if tag_present(scores, tag):
+            return "nsfw/boys/sex"
+
+    # ===== 3. FORCE FURRY =====
+    for tag in ALWAYS_FURRY:
+        if tag_present(scores, tag):
+            if nsfw:
+                return "nsfw/furry/sex"
+            else:
+                return "sfw/furry"
+
+    # ===== 4. FORCE YAoi =====
+    for tag in YAoi_FORCE:
+        if tag_present(scores, tag):
+            return "nsfw/boys/yaoi"
+
+    # ===== 5. FORCE LESBIAN =====
+    for tag in LESBIAN_FORCE:
+        if tag_present(scores, tag):
+            return "nsfw/girls/lesbian"
+
+    # ===== 6. 1boy & 1girl rule =====
+    if tag_present(scores,"1boy") and tag_present(scores,"1girl"):
         return "nsfw/girls/sex"
 
-    # ======================
-    # SFW STRICT
-    # ======================
+    # ===== 7. Gender dominance =====
+    boy = scores.get("1boy",0)
+    girl = scores.get("1girl",0)
+
+    if boy >= 0.45 and boy > girl + 0.20:
+        return "nsfw/boys/sex"
+
+    if girl >= 0.45 and girl > boy + 0.20:
+        return "nsfw/girls/sex"
+
+    # ===== 8. Video fallback =====
+    if is_video:
+        return "nsfw/animated" if nsfw else "sfw/animated"
+
+    # ===== 9. Final fallback =====
+    if nsfw:
+        return "nsfw/girls/sex"
     else:
-
-        if is_video:
-            return "sfw/animated"
-
-        if furry >= 0.50:
-            return "sfw/furry"
-
         return "sfw"
 
 # =========================
@@ -217,7 +234,7 @@ def classify(scores, ext):
 # =========================
 
 def create_structure(base):
-    paths = [
+    paths=[
         "sfw",
         "sfw/furry",
         "sfw/animated",
@@ -230,7 +247,7 @@ def create_structure(base):
         "duplicates"
     ]
     for p in paths:
-        os.makedirs(os.path.join(base,p), exist_ok=True)
+        os.makedirs(os.path.join(base,p),exist_ok=True)
 
 # =========================
 # SCAN
@@ -247,7 +264,7 @@ def scan(folder):
     skip={"sfw","nsfw","duplicates"}
 
     for root_dir,dirs,filenames in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in skip]
+        dirs[:]=[d for d in dirs if d not in skip]
         for f in filenames:
             ext=os.path.splitext(f)[1].lower()
             if ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS:
@@ -261,7 +278,7 @@ def scan(folder):
         try:
             h=file_hash(path)
             if h in seen_hashes:
-                shutil.move(path, os.path.join(folder,"duplicates",os.path.basename(path)))
+                shutil.move(path,os.path.join(folder,"duplicates",os.path.basename(path)))
                 continue
             seen_hashes.add(h)
 
@@ -276,9 +293,7 @@ def scan(folder):
                 scores=batch_predict([img])
 
             dest=classify(scores,ext)
-            target=os.path.join(folder,dest)
-
-            shutil.move(path, os.path.join(target,os.path.basename(path)))
+            shutil.move(path,os.path.join(folder,dest,os.path.basename(path)))
 
             current_file_label.config(text=os.path.basename(path))
             destination_label.config(text=dest)
@@ -301,7 +316,7 @@ def start():
         threading.Thread(target=scan,args=(folder,),daemon=True).start()
 
 root=tk.Tk()
-root.title("Media Auto Sorter STRICT")
+root.title("Media Auto Sorter ULTRA STRICT")
 root.geometry("600x350")
 
 tk.Button(root,text="Select Folder & Scan",command=start).pack(pady=10)
