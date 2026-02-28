@@ -1,0 +1,60 @@
+{
+  "thresholds": {
+    "very_high": 0.75,
+    "high": 0.60,
+    "medium": 0.45,
+    "low": 0.30
+  },
+
+  "rating": {
+    "safe": "rating:safe",
+    "explicit": "rating:explicit"
+  },
+
+  "force_nsfw": [
+    "bottomless",
+    "trembling",
+    "midriff",
+    "underwear",
+    "large_breasts",
+    "nipples",
+    "nude",
+    "thighhighs",
+    "choker"
+  ],
+
+  "force_furry": [
+    "animal_ears",
+    "dog_ears",
+    "fox_ears",
+    "fox_girl",
+    "fox_tail",
+    "raccoon_ears",
+    "raccoon_tail",
+    "cat_ears",
+    "tail",
+    "colored_skin"
+  ],
+
+  "force_yaoi": [
+    "yaoi",
+    "male_focus",
+    "otoko_no_ko",
+    "trap",
+    "crossdressing"
+  ],
+
+  "force_lesbian": [
+    "futanari"
+  ],
+
+  "girls_explicit": [
+    "pussy",
+    "vaginal",
+    "small_breasts"
+  ],
+
+  "boys_explicit": [
+    "penis"
+  ]
+}
