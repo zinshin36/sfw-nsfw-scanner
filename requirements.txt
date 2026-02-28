@@ -1,7 +1,5 @@
-requests==2.31.0
-beautifulsoup4==4.12.2
-lxml==4.9.3
-html5lib==1.1
+tensorflow==2.15.0
+numpy==1.26.4
+opencv-python==4.9.0.80
 pillow==10.2.0
-tqdm==4.66.1
-python-Levenshtein==0.21.2
+pyinstaller==6.6.0
