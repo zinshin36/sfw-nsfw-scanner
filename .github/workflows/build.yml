@@ -27,42 +27,27 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # ----------------------------------------
-      # DOWNLOAD MODEL (SAFE EXTRACTION)
-      # ----------------------------------------
+      - name: Create model folder
+        run: mkdir model
+
       - name: Download DeepDanbooru Model
         shell: pwsh
         run: |
-          Write-Host "Creating model directory"
-          New-Item -ItemType Directory -Force -Path model
-
-          Write-Host "Downloading model zip"
           Invoke-WebRequest `
             -Uri "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" `
             -OutFile "model.zip"
 
-          Write-Host "Extracting directly into model/"
           Expand-Archive -Path "model.zip" -DestinationPath "model" -Force
-
           Remove-Item "model.zip"
 
-          Write-Host "Model directory contents:"
-          Get-ChildItem -Recurse model
-
-      # ----------------------------------------
-      # BUILD ONEDIR EXE
-      # ----------------------------------------
       - name: Build EXE
-        run: |
-          pyinstaller --clean app.spec
+        run: pyinstaller --clean app.spec
 
       - name: Show dist folder
-        run: |
-          Write-Host "==== DIST STRUCTURE ===="
-          Get-ChildItem -Recurse dist
+        run: Get-ChildItem -Recurse dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: dist/app/
+          name: UltraStrictSorter
+          path: dist/UltraStrictSorter/
